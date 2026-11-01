@@ -8,7 +8,7 @@ Arduino Mega 2560 sketches for a four-motor soccer robot with two Cytron MDD3A d
 | [MegaIROnlyTest](sketches/MegaIROnlyTest) | IR direction and strength diagnostic; motors held LOW |
 | [MegaI2CTest](sketches/MegaI2CTest) | I2C scan and three MPU identity reads; motors held LOW |
 
-The older motor-only and MPU movement sketches were replaced by `MegaBallSearchNoTurn`. The new sketch uses the motor pin map supplied for the current robot:
+The integrated movement sketch is `MegaBallSearchNoTurn`. The latest standalone motor, MPU-only, IR-only, and I2C tests are collected separately in **[hardware-tests](hardware-tests/README.md)**, with wiring and serial commands. The sketches use the motor pin map supplied for the current robot:
 
 | Motor | Input 1 | Input 2 |
 | --- | --- | --- |
