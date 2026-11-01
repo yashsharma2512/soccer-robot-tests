@@ -1,0 +1,25 @@
+# Arduino build products
+build/
+build-*/
+*.o
+*.a
+*.elf
+*.hex
+*.eep
+*.bin
+*.map
+*.d
+*.zip
+
+# Editor and local machine files
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+.env
+.env.*
+!.env.example
+arduino-cli.yaml
