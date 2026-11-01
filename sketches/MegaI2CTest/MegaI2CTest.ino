@@ -3,10 +3,10 @@
 // No MPU library, initialization, calibration, or motor movement.
 #include <Wire.h>
 
-const uint8_t FL1 = 10, FL2 = 11;
-const uint8_t FR1 = 4, FR2 = 5;
-const uint8_t BL1 = 8, BL2 = 9;
-const uint8_t BR1 = 3, BR2 = 2;
+const uint8_t FL1 = 8, FL2 = 6;
+const uint8_t FR1 = 9, FR2 = 7;
+const uint8_t BL1 = 4, BL2 = 2;
+const uint8_t BR1 = 3, BR2 = 5;
 const uint8_t MOTOR_PINS[8] = {FL1, FL2, FR1, FR2, BL1, BL2, BR1, BR2};
 
 void printHex(uint8_t value) {
@@ -51,6 +51,12 @@ void printIdentity(uint8_t address) {
   if (complete) {
     Serial.print(values[0] == values[1] && values[1] == values[2]
                      ? F(" (stable)") : F(" (UNSTABLE)"));
+    if (values[0] == values[1] && values[1] == values[2]) {
+      if ((values[0] & 0x7E) == 0x68)
+        Serial.print(F("; MPU-6050 compatible ID"));
+      else if (values[0] == 0x74)
+        Serial.print(F("; MPU-6515/6500-family ID"));
+    }
   }
   Serial.println();
 }

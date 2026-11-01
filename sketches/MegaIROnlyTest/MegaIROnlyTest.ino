@@ -4,7 +4,7 @@
 #include <Wire.h>
 
 const uint8_t IR_ADDRESS = 0x08;
-const uint8_t MOTOR_PINS[8] = {10, 11, 4, 5, 8, 9, 3, 2};
+const uint8_t MOTOR_PINS[8] = {8, 6, 9, 7, 4, 2, 3, 5};
 
 void setup() {
   for (uint8_t i = 0; i < 8; ++i) {
