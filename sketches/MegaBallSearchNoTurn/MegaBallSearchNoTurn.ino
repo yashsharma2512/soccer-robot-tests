@@ -1,11 +1,10 @@
 // Mega 2560: HiTechnic IR Seeker V2 + MPU heading-held ball follower.
-// No search turning or blind reverse. Search translates in a bounded raster.
+// Ball visible: follow with heading correction. Ball lost: stop and keep reading.
 #include <Arduino.h>
 #include <Wire.h>
 #include "DriveLogic.h"
 #include "RobotConfig.h"
 #include "MpuYaw.h"
-#include "SearchPattern.h"
 
 const uint8_t IR_ADDRESS = 0x08;
 const uint8_t FL1 = 8, FL2 = 6;
@@ -18,20 +17,14 @@ const uint16_t IR_POLL_MS = 50;
 const uint16_t REPORT_MS = 200;
 const uint8_t MIN_STRENGTH = 1;
 const float CHASE_PWM = 75;
-const float SEARCH_PWM = 60;
 const float MAX_HEADING_PWM = 30;
 const int16_t MAX_WHEEL_PWM = 110;
 
 MpuYaw imu;
 drive::Wheels wheels = {0, 0, 0, 0};
 bool enabled = true;
-bool irFault = false;
 bool headingLocked = false;
-bool searchStarted = false;
-bool searchFinished = false;
-int8_t preferredSide = 1;
 float targetYaw = 0;
-uint32_t searchStartMs = 0;
 uint32_t lastIrPollMs = 0;
 uint32_t lastReportMs = 0;
 uint8_t lastDirection = 0;
@@ -104,8 +97,6 @@ void driveWithHeading(drive::Motion motion) {
 void beginCalibration() {
   stopMotors();
   headingLocked = false;
-  searchStarted = false;
-  searchFinished = false;
   state = F("CALIBRATING");
   if (!imu.startCalibration()) {
     state = F("MPU_FAULT");
@@ -118,30 +109,44 @@ void beginCalibration() {
   }
 }
 
+void executeCommand(char command) {
+  if (command == 'g') {
+    enabled = true;
+    if (imu.healthy(millis())) targetYaw = imu.yaw();
+    Serial.println(F("Following enabled. No ball = stopped; IR reads continue."));
+  } else if (command == 'c') {
+    beginCalibration();
+  } else {
+    enabled = false;
+    stopMotors();
+    state = F("STOPPED");
+    Serial.println(F("Stopped. Commands: g=follow, s=stop, c=calibrate."));
+  }
+}
+
 void handleSerial() {
-  while (Serial.available()) {
+  // Movement commands require a complete, single-character line.
+  // Stop is immediate and discards the rest of its line.
+  static char pending = 0;
+  static bool extraCharacters = false, discardLine = false;
+  for (uint8_t budget = 0; budget < 32 && Serial.available(); ++budget) {
     char command = char(Serial.read());
-    if (command == 's' || command == 'x' || command == '0' || command == ' ') {
+    if (command >= 'A' && command <= 'Z') command += 'a' - 'A';
+    if (command == '\r' || command == '\n') {
+      if (!discardLine && pending)
+        executeCommand(extraCharacters ? '?' : pending);
+      pending = 0;
+      extraCharacters = discardLine = false;
+    } else if (command == 's' || command == 'x' || command == '0' || command == ' ') {
       enabled = false;
       stopMotors();
       state = F("STOPPED");
-      Serial.println(F("Stopped. g=resume"));
-    } else if (command == 'g') {
-      enabled = true;
-      irFault = false;
-      searchStarted = false;
-      searchFinished = false;
-      if (imu.healthy(millis())) targetYaw = imu.yaw();
-      Serial.println(F("Search/follow resumed."));
-    } else if (command == 'c') {
-      beginCalibration();
-    } else if (command == 'z') {
-      stopMotors();
-      if (imu.healthy(millis())) {
-        imu.zero(); targetYaw = 0;
-        searchStarted = false;
-        Serial.println(F("Heading zeroed."));
-      }
+      if (!discardLine) Serial.println(F("Stopped. g=resume"));
+      pending = 0;
+      discardLine = true;
+    } else if (!discardLine) {
+      if (pending) extraCharacters = true;
+      else pending = command;
     }
   }
 }
@@ -171,8 +176,8 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
-  Serial.println(F("Ball follower MPU ID fix: 0x68/0x70/0x74; stable identity required."));
-  Serial.println(F("Pins FL 8/6 FR 9/7 BL 4/2 BR 3/5; s=stop g=resume c=recalibrate"));
+  Serial.println(F("SIMPLE FOLLOW: ball seen = move; no ball = stop and keep checking."));
+  Serial.println(F("Pins FL 8/6 FR 9/7 BL 4/2 BR 3/5; s=stop g=follow c=recalibrate; use Newline"));
   beginCalibration();
 }
 
@@ -198,9 +203,9 @@ void loop() {
     headingLocked = true;
     Serial.println(F("MPU ready; holding heading."));
   }
-  if (!enabled || irFault) {
+  if (!enabled) {
     stopMotors();
-    state = !enabled ? F("STOPPED") : F("IR_FAULT");
+    state = F("STOPPED");
     report(now);
     return;
   }
@@ -211,9 +216,10 @@ void loop() {
   uint16_t strength = 0;
   if (!readIR(direction, strength) || direction > 9) {
     stopMotors();
-    irFault = true;
+    lastDirection = 0;
+    lastStrength = 0;
     state = F("IR_FAULT");
-    Serial.println(F("IR read/identity fault; motors stopped. Check IR, then send g."));
+    Serial.println(F("IR read failed; stopped. Retrying automatically."));
     report(millis());
     return;
   }
@@ -229,33 +235,11 @@ void loop() {
   }
 
   if (direction >= 1 && strength >= MIN_STRENGTH) {
-    searchStarted = false;
-    searchFinished = false;
-    if (direction < 5) preferredSide = -1;
-    if (direction > 5) preferredSide = 1;
     state = F("FOLLOW");
     driveWithHeading(motionForBall(direction));
   } else {
-    if (!searchStarted && !searchFinished) {
-      searchStartMs = now;
-      searchStarted = true;
-    }
-    if (searchFinished) {
-      stopMotors();
-      state = F("SEARCH_DONE");
-    } else {
-      search::Step step = search::at(uint32_t(now - searchStartMs), preferredSide, SEARCH_PWM);
-      if (step.finished) {
-        searchStarted = false;
-        searchFinished = true;
-        stopMotors();
-        state = F("SEARCH_DONE");
-        Serial.println(F("Local search finished. Ball unseen; stopped. g=retry"));
-      } else {
-        state = F("SEARCH");
-        driveWithHeading(step.motion);
-      }
-    }
+    stopMotors();
+    state = F("WAIT_BALL");
   }
   report(now);
 }

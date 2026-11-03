@@ -1,5 +1,30 @@
 # Validation
 
+## Simple following and automatic reacquisition - 4 November 2026
+
+The main sketch now uses `FOLLOW` for a valid IR ball reading and
+`WAIT_BALL` with all wheel outputs zero when the ball is unseen. The timed
+search, search completion flags, and IR-error latch were removed. IR
+transactions continue every 50 ms while enabled with a healthy MPU,
+including during `WAIT_BALL` and following an IR read error. A valid later
+reading enables following without a serial retry command. Manual stop
+remains latched until `g`; an MPU fault still requires `c` recalibration.
+
+Serial commands are now parsed as single-character lines, with immediate
+stop characters discarding the rest of their line. Unused search/turn
+helpers and their former search-pattern test were removed. The MPU6500
+identity fix, motor pins, direction mapping, and heading correction remain.
+
+The updated main sketch compiled for **Arduino Mega 2560**
+(`arduino:avr:mega`) with Arduino AVR Boards **1.8.6** and AVR GCC
+**7.3.0-atmel3.6.1-arduino7**: **13,956 bytes flash**, **522 bytes static RAM**.
+Whitespace checks passed and active source was checked for removed search
+state and IR fault-latch references. No automated runtime test, firmware
+upload, or physical robot test was performed for this change. The
+[bench regression checklist](verification/README.md) covers loss and
+reappearance after a long wait, transient IR failures, manual stop/resume,
+MPU faults, and heading feedback.
+
 ## MPU6500 identity fix - 3 November 2026
 
 The user-provided identity-test output reports `0x70 / 0x70 / 0x70 STABLE`
