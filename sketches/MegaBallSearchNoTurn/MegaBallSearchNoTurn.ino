@@ -110,7 +110,8 @@ void beginCalibration() {
   if (!imu.startCalibration()) {
     state = F("MPU_FAULT");
     Serial.print(F("MPU start failed, code "));
-    Serial.println(uint8_t(imu.error()));
+    Serial.print(uint8_t(imu.error()));
+    Serial.print(F(" ")); Serial.println(MpuYaw::errorName(imu.error()));
   } else {
     reportedMpuError = MpuYaw::OK;
     Serial.println(F("Keep robot still for MPU calibration."));
@@ -152,6 +153,8 @@ void report(uint32_t now) {
   Serial.print(F(" dir=")); Serial.print(lastDirection);
   Serial.print(F(" strength=")); Serial.print(lastStrength);
   Serial.print(F(" yaw=")); Serial.print(imu.yaw(), 1);
+  Serial.print(F(" mpu=")); Serial.print(MpuYaw::errorName(imu.error()));
+  Serial.print(F(" id=0x")); Serial.print(imu.identity(), HEX);
   Serial.print(F(" PWM="));
   Serial.print(wheels.fl); Serial.print('/');
   Serial.print(wheels.fr); Serial.print('/');
@@ -168,7 +171,7 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
-  Serial.println(F("Ball follower: no search turns, no blind reverse."));
+  Serial.println(F("Ball follower MPU ID fix: 0x68/0x70/0x74; stable identity required."));
   Serial.println(F("Pins FL 8/6 FR 9/7 BL 4/2 BR 3/5; s=stop g=resume c=recalibrate"));
   beginCalibration();
 }
@@ -181,7 +184,8 @@ void loop() {
   if (imu.error() != MpuYaw::OK && imu.error() != reportedMpuError) {
     reportedMpuError = imu.error();
     Serial.print(F("MPU fault, code "));
-    Serial.println(uint8_t(reportedMpuError));
+    Serial.print(uint8_t(reportedMpuError));
+    Serial.print(F(" ")); Serial.println(MpuYaw::errorName(reportedMpuError));
   }
   if (!imu.healthy(now)) {
     stopMotors();

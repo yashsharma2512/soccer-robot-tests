@@ -3,8 +3,31 @@
 Open `MegaBallSearchNoTurn/MegaBallSearchNoTurn.ino` as the Arduino sketch,
 select **Arduino Mega 2560**, and upload. Serial Monitor is **115200 baud**.
 This version uses both the HiTechnic IR Seeker V2 and the MPU yaw reader on
-Mega SDA D20 / SCL D21. The MPU reader accepts the `0x74` identity reported
-by your module. Keep the robot still until `MPU ready; holding heading.`
+Mega SDA D20 / SCL D21. The MPU reader accepts stable IDs `0x68`, `0x70`,
+and `0x74`, matching the standalone MPU-only test. The latest diagnostic
+from this robot reports `0x70` at I2C address `0x68`. Keep the robot still
+until `MPU ready; holding heading.`
+
+## MPU identity fix (3 November 2026)
+
+Error code **2** in this sketch means `MPU_WRONG_ID`. The previous main
+reader accepted `0x68`/`0x69` and `0x74` but rejected `0x70`, even though
+the standalone MPU-only test already supported `0x70`. The main reader now
+uses the same supported IDs as that test. It also configures register
+`0x1D` for the MPU6500/6515 paths and includes that register in runtime
+configuration checks.
+
+Startup and `c` print three identity reads. For this sensor, expect:
+
+```text
+MPU address=0x68 WHO_AM_I=0x70/0x70/0x70 stable
+```
+
+Allow stationary calibration to complete. Telemetry includes `mpu=OK`
+and `id=0x70` during normal operation. Unknown IDs and unstable/read-failed
+identities still block movement. If an error remains, retain the complete
+identity line and the named error. The corrected main sketch has compiled;
+its live calibration and heading behavior still require a robot test.
 
 Motor inputs are the pins you supplied:
 

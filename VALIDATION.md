@@ -1,4 +1,27 @@
-# Validation - 1 November 2026
+# Validation
+
+## MPU6500 identity fix - 3 November 2026
+
+The user-provided identity-test output reports `0x70 / 0x70 / 0x70 STABLE`
+at I2C address `0x68`. The previous main reader rejected this ID with error
+2 (`MPU_WRONG_ID`). The corrected reader accepts the same exact IDs as the
+standalone MPU-only test (`0x68`, `0x70`, `0x74`), requires three matching
+reads, configures the MPU6500-family accelerometer filter, and verifies
+that filter during runtime configuration checks. Unknown identities and
+unstable reads remain blocked.
+
+The updated `MegaBallSearchNoTurn` compiled successfully for
+`arduino:avr:mega` with Arduino AVR Boards **1.8.6** and AVR GCC
+**7.3.0-atmel3.6.1-arduino7**: **14,456 bytes flash**, **590 bytes static RAM**.
+The standalone identity diagnostic also compiled: **5,586 bytes flash**,
+**412 bytes static RAM**. Whitespace checks passed.
+
+The screenshot establishes the live identity reading only. No updated
+main firmware was uploaded or physically tested during this fix; gyro
+calibration, yaw accuracy, and heading feedback remain to be checked on the
+robot. The ball-following/search logic and motor pin map were not changed.
+
+## Original search update - 1 November 2026
 
 `MegaBallSearchNoTurn`, `MegaIROnlyTest`, and `MegaI2CTest` were compiled for **Arduino Mega 2560** (`arduino:avr:mega`) using Arduino AVR Boards **1.8.8** and AVR GCC **7.3.0-atmel3.6.1-arduino7**. The search-pattern checks passed with the host C++11 compiler. The other two sketches only changed their motor pins (and the I2C scanner's identity label); their sensor read sequences were preserved.
 

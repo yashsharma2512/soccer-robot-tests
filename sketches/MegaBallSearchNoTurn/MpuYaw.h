@@ -10,7 +10,7 @@ class MpuYaw {
  public:
   enum Error { OK, NOT_FOUND, WRONG_ID, READ_FAILED, CONFIG_CHANGED,
                NOT_STILL, NO_NEW_DATA, SAMPLE_GAP, CAL_TIMEOUT };
-  MpuYaw() : address_(0x68), online_(false), calibrated_(false), calibrating_(false),
+  MpuYaw() : address_(0x68), identity_(0), online_(false), calibrated_(false), calibrating_(false),
       error_(NOT_FOUND), count_(0), mean_(0), m2_(0), minimum_(0), maximum_(0),
       yaw_(0), rate_(0), lastPoll_(0), lastSampleMs_(0), lastSampleUs_(0),
       lastConfigCheck_(0), calibrationStart_(0) {}
@@ -18,18 +18,40 @@ class MpuYaw {
   bool startCalibration() {
     online_ = calibrated_ = calibrating_ = false;
     error_ = NOT_FOUND;
+    identity_ = 0;
     bool responded = false;
+    bool unstableRead = false;
     for (uint8_t attempt = 0; attempt < 2; ++attempt) {
       address_ = attempt == 0 ? 0x68 : 0x69;
       uint8_t id = 0;
       if (!read(0x75, &id, 1)) continue;
       responded = true;
-      // 0x68 is the MPU-6050 ID. MPU-6515 parts report 0x74 at the same
-      // I2C address and use the MPU-6500-compatible gyro register map.
-      if ((id & 0x7E) != 0x68 && id != 0x74) continue;
+      identity_ = id;
+      uint8_t second = 0, third = 0;
+      Serial.print(F("MPU address=0x")); Serial.print(address_, HEX);
+      Serial.print(F(" WHO_AM_I=0x")); Serial.print(id, HEX);
+      if (!read(0x75, &second, 1) || !read(0x75, &third, 1)) {
+        Serial.println(F(" confirmation read failed"));
+        unstableRead = true;
+        continue;
+      }
+      Serial.print(F("/0x")); Serial.print(second, HEX);
+      Serial.print(F("/0x")); Serial.print(third, HEX);
+      if (id != second || second != third) {
+        Serial.println(F(" UNSTABLE"));
+        unstableRead = true;
+        continue;
+      }
+      Serial.println(F(" stable"));
+      // Match the standalone MPU-only test: 6050, 6500, and 6515.
+      if (id != 0x68 && id != 0x70 && id != 0x74) {
+        Serial.println(F("Unsupported MPU identity; motion remains blocked."));
+        continue;
+      }
       if (!write(0x6B, 0x01) || !write(0x6C, 0x00) || !write(0x1A, 0x03) ||
           !write(0x19, 0x04) || !write(0x1B, 0x00) || !write(0x1C, 0x00) ||
-          !write(0x37, 0x00) || !write(0x38, 0x01)) {
+          !write(0x37, 0x00) || !write(0x38, 0x01) ||
+          (identity_ != 0x68 && !write(0x1D, 0x03))) {
         fail(READ_FAILED);
         return false;
       }
@@ -42,7 +64,7 @@ class MpuYaw {
       lastSampleUs_ = micros();
       return true;
     }
-    error_ = responded ? WRONG_ID : NOT_FOUND;
+    error_ = unstableRead ? READ_FAILED : (responded ? WRONG_ID : NOT_FOUND);
     return false;
   }
 
@@ -103,12 +125,14 @@ class MpuYaw {
 
     if (uint32_t(now - lastConfigCheck_) >= 250) {
       lastConfigCheck_ = now;
-      uint8_t config[4], power[2], interruptConfig[2];
-      if (!read(0x19, config, 4) || !read(0x6B, power, 2) || !read(0x37, interruptConfig, 2)) {
+      uint8_t config[5] = {}, power[2], interruptConfig[2];
+      uint8_t configLength = identity_ == 0x68 ? 4 : 5;
+      if (!read(0x19, config, configLength) || !read(0x6B, power, 2) || !read(0x37, interruptConfig, 2)) {
         fail(READ_FAILED); return;
       }
       if (config[0] != 4 || config[1] != 3 || config[2] != 0 || config[3] != 0 ||
-          power[0] != 1 || power[1] != 0 || interruptConfig[0] != 0 || interruptConfig[1] != 1)
+          power[0] != 1 || power[1] != 0 || interruptConfig[0] != 0 || interruptConfig[1] != 1 ||
+          (identity_ != 0x68 && config[4] != 3))
         fail(CONFIG_CHANGED);
     }
   }
@@ -120,7 +144,22 @@ class MpuYaw {
   bool calibrated() const { return calibrated_; }
   uint16_t progress() const { return count_; }
   uint8_t address() const { return address_; }
+  uint8_t identity() const { return identity_; }
   Error error() const { return error_; }
+  static const __FlashStringHelper *errorName(Error error) {
+    switch (error) {
+      case OK: return F("OK");
+      case NOT_FOUND: return F("MPU_NOT_FOUND");
+      case WRONG_ID: return F("MPU_WRONG_ID");
+      case READ_FAILED: return F("MPU_READ_FAILED");
+      case CONFIG_CHANGED: return F("MPU_CONFIG_CHANGED");
+      case NOT_STILL: return F("MPU_CAL_NOT_STILL");
+      case NO_NEW_DATA: return F("MPU_NO_NEW_DATA");
+      case SAMPLE_GAP: return F("MPU_SAMPLE_GAP");
+      case CAL_TIMEOUT: return F("MPU_CAL_TIMEOUT");
+    }
+    return F("MPU_UNKNOWN_ERROR");
+  }
   float yaw() const { return yaw_; }
   float rate() const { return rate_; }
   float biasRaw() const { return mean_; }
@@ -151,7 +190,7 @@ class MpuYaw {
     error_ = error;
     online_ = calibrated_ = calibrating_ = false;
   }
-  uint8_t address_;
+  uint8_t address_, identity_;
   bool online_, calibrated_, calibrating_;
   Error error_;
   uint16_t count_;
