@@ -95,7 +95,8 @@ void scanSensors() {
     uint8_t id = 0;
     if (!readAPDS(0x92, &id, 1)) { Serial.println(F("ID read failed")); continue; }
     Serial.print(F("ID=0x")); Serial.print(id, HEX);
-    if (id != 0xAB && id != 0x9C) {
+    // 0x9E modules are also supported by the ESPHome APDS9960 driver.
+    if (id != 0xAB && id != 0x9C && id != 0x9E) {
       Serial.println(F(" unsupported ID")); continue;
     }
     if (!initAPDS()) { Serial.println(F(" configuration failed")); continue; }
