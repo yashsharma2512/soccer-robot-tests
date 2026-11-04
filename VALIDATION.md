@@ -1,5 +1,33 @@
 # Validation
 
+## APDS boundary priority - 5 November 2026
+
+`MegaBallSearchNoTurn` now polls four APDS sensors on TCA channels 0-3,
+with editable side/corner mapping in BoundaryConfig.h. It starts stopped,
+requires valid field/white calibration, and gives line escape priority over
+IR following. Missing, stale, saturated, or failed line readings block
+movement. Retreat is limited to 650 ms and requires 120 ms stable clear;
+opposing detections or timeout latch a stop. Calibration is stored in a
+30-byte checksummed EEPROM record, updated one byte per loop while stopped.
+The standalone Linux bounded-search variant was not modified.
+
+**33 compile-time assertions passed** against actual BoundaryLogic.h
+functions, using AVR GCC C++14. These cover all 16 physical edge masks,
+cardinal/corner mapping and invalid channels, contrast/noise rejection,
+hysteresis, manual/calibration/fault motion guards, stable-clear timing,
+timeout latching/reset, newly detected corners/opposing sides, timer
+rollover, and the standard CRC-16/CCITT-FALSE check vector. This evaluates
+the pure control logic; it does not execute the I2C driver, EEPROM hardware,
+or a complete simulated robot.
+
+The main firmware compiled for `arduino:avr:mega` with Arduino AVR Boards
+**1.8.6** and AVR GCC **7.3.0-atmel3.6.1-arduino7**: **21,470 bytes flash**,
+**743 bytes static RAM**. No firmware was uploaded or physically tested.
+Per-sensor field/white calibration, actual side mapping, lighting contrast,
+gyro/retreat direction, sensor timing, and stopping distance remain to be
+checked on the robot. See [boundary instructions](sketches/MegaBallSearchNoTurn/BOUNDARY.md)
+and the [bench checklist](verification/README.md).
+
 ## Simple following and automatic reacquisition - 4 November 2026
 
 The main sketch now uses `FOLLOW` for a valid IR ball reading and

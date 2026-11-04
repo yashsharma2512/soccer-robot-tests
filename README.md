@@ -4,7 +4,7 @@ Arduino Mega 2560 sketches for a four-motor soccer robot with two Cytron MDD3A d
 
 | Sketch | Purpose |
 | --- | --- |
-| [MegaBallSearchNoTurn](sketches/MegaBallSearchNoTurn) | Simple ball follower with MPU heading correction; waits and automatically reacquires when the ball returns |
+| [MegaBallSearchNoTurn](sketches/MegaBallSearchNoTurn) | Simple IR follower with MPU heading correction and calibrated APDS boundary priority |
 | [MegaIROnlyTest](sketches/MegaIROnlyTest) | IR direction and strength diagnostic; motors held LOW |
 | [MegaI2CTest](sketches/MegaI2CTest) | I2C scan and three MPU identity reads; motors held LOW |
 
@@ -21,8 +21,10 @@ Each MDD3A channel uses two PWM control inputs. Connect Mega ground and both dri
 
 ## Ball follower
 
-Open `sketches/MegaBallSearchNoTurn/MegaBallSearchNoTurn.ino`, select **Arduino Mega 2560**, upload, and open Serial Monitor at **115200 baud**. Keep the robot still during gyro calibration. The MPU reader accepts stable identities `0x68`, `0x70`, and `0x74`, matching the standalone MPU test. The latest diagnostic from this robot reports `0x70` at address `0x68`; the earlier main reader rejected that ID as error 2 (`MPU_WRONG_ID`). The updated reader configures the MPU6500-family accelerometer filter and prints three identity reads plus named errors. It starts following a valid IR signal automatically after calibration.
+Open `sketches/MegaBallSearchNoTurn/MegaBallSearchNoTurn.ino` with all six headers, select **Arduino Mega 2560**, upload, and open Serial Monitor at **115200 baud, Newline**. Edit the placeholder sensor positions in **BoundaryConfig.h** first. The program starts stopped and requires four healthy, calibrated APDS sensors before `g` can enable movement. Keep the robot still during gyro calibration. The MPU reader accepts stable IDs `0x68`, `0x70`, and `0x74`; this robot's latest diagnostic reported `0x70` at address `0x68`.
 
-If the ball signal disappears, the robot stops and keeps checking the IR sensor every 50 ms. It resumes following automatically when a valid signal returns. IR read failures stop the motors and retry automatically; MPU faults require `c` to recalibrate. The timed search has been removed. Send `s` to stop, `g` + Enter to enable following, or `c` + Enter to recalibrate. [Detailed behavior and first-test instructions](sketches/MegaBallSearchNoTurn/README.md).
+Calibrate the field with `f`, then white for each sensor with `1`, `2`, `3`, and `4`. Wait for the calibration-save message, reposition onto the field, then use `g`. Thresholds are saved to EEPROM. White-line detection overrides ball following with a short retreat; stale/faulty sensors block movement. [Boundary mapping, calibration, and commands](sketches/MegaBallSearchNoTurn/BOUNDARY.md).
 
-**Lift the wheels for the first test.** Check wheel polarity and gyro correction direction before floor testing. The MPU measures relative heading, not position; the robot cannot know its exact location, field boundaries, or own goal from these sensors. See [validation](VALIDATION.md).
+If the ball disappears, the robot stops and keeps reading IR, resuming when the ball returns. IR read failures stop and retry; MPU faults require stationary `c` recalibration. There is no timed ball search. Send `s` to stop. [Main sketch instructions](sketches/MegaBallSearchNoTurn/README.md).
+
+**Lift the wheels for the first test.** Check wheel polarity, gyro correction, and the retreat direction for each APDS sensor before floor testing. APDS sensors detect local brightness contrast; the MPU measures relative heading. These do not provide global position or guaranteed boundary/goal avoidance. See [validation](VALIDATION.md).
