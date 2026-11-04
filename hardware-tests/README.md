@@ -10,7 +10,7 @@ Select **Arduino Mega or Mega 2560 / ATmega2560**. Open the `.ino` whose name ma
 | [MegaMPUOnlyTest](MegaMPUOnlyTest) | Three identity reads, gyro calibration, acceleration, gyro Z rate, and relative yaw; motor outputs LOW |
 | [MegaIROnlyTest](MegaIROnlyTest) | AC direction, baseline-derived strength, and five IR channels; motor outputs LOW |
 | [MegaI2CTest](MegaI2CTest) | I2C scanner and three raw MPU identity reads; motor outputs LOW |
-| [MegaAPDSTcaTest](MegaAPDSTcaTest) | All eight TCA9548A channels: APDS identity, configuration, and Clear/RGB readings for field/white comparison; motor outputs LOW |
+| [MegaAPDSTcaTest](MegaAPDSTcaTest) | All eight TCA9548A channels: APDS identity and Clear/RGB field/white readings with 16 steady white NeoPixels on D16; motor outputs LOW |
 
 ## Shared connections
 

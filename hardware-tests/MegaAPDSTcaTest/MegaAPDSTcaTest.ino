@@ -1,13 +1,18 @@
 // Mega 2560 + one TCA9548A + one APDS9960 per occupied channel.
-// Wire only. Motor outputs stay LOW. Serial Monitor: 115200 baud.
+// Adafruit NeoPixel + Wire. Motors LOW. Serial Monitor: 115200 baud.
 #include <Arduino.h>
 #include <Wire.h>
+#include <Adafruit_NeoPixel.h>
 
 const uint8_t TCA_ADDRESS = 0x70; // Change if A0/A1/A2 select 0x71..0x77.
 const uint8_t APDS_ADDRESS = 0x39;
 const uint8_t ATIME_VALUE = 219;  // Approximately 103 ms integration.
 const uint8_t GAIN_VALUE = 1;     // 0=1x, 1=4x, 2=16x, 3=64x.
 const uint8_t MOTOR_PINS[] = {8, 6, 9, 7, 4, 2, 3, 5};
+const uint8_t PIXEL_PIN = 16;
+const uint8_t PIXEL_COUNT = 16;
+const uint8_t WHITE_LEVEL = 32; // Each RGB component, 0..255. Keep fixed while testing.
+Adafruit_NeoPixel pixels(PIXEL_COUNT, PIXEL_PIN, NEO_GRB + NEO_KHZ800);
 bool present[8] = {};
 bool muxReady = false;
 uint32_t lastReport = 0;
@@ -122,6 +127,19 @@ void setup() {
     pinMode(MOTOR_PINS[i], OUTPUT);
   }
   Serial.begin(115200);
+  // Set the illumination once, before starting any I2C transactions.
+  // The pixels retain this colour; there is no animation or per-read show().
+  pixels.begin();
+  if (!pixels.getPixels()) {
+    Serial.println(F("NeoPixel buffer allocation failed; test not started."));
+    return;
+  }
+  for (uint8_t i = 0; i < PIXEL_COUNT; ++i)
+    pixels.setPixelColor(i, WHITE_LEVEL, WHITE_LEVEL, WHITE_LEVEL);
+  pixels.show();
+  delay(50);
+  Serial.print(F("NeoPixel command: 16 steady white on D16, RGB level="));
+  Serial.println(WHITE_LEVEL);
   Wire.begin(); Wire.setClock(100000); Wire.setWireTimeout(25000, true);
   Serial.println(F("MEGA APDS/TCA TEST: SDA=20 SCL=21. Motors LOW. r=rescan"));
   scanSensors();
