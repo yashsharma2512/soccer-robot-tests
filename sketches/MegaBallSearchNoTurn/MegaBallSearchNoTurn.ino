@@ -10,8 +10,8 @@
 const uint8_t IR_ADDRESS = 0x08;
 const uint8_t FL1 = 8, FL2 = 6;
 const uint8_t FR1 = 9, FR2 = 7;
-const uint8_t BL1 = 4, BL2 = 2;
-const uint8_t BR1 = 3, BR2 = 5;
+const uint8_t BL1 = 2, BL2 = 3;
+const uint8_t BR1 = 10, BR2 = 11;
 const uint8_t MOTOR_PINS[8] = {FL1, FL2, FR1, FR2, BL1, BL2, BR1, BR2};
 
 const uint16_t IR_POLL_MS = 50;

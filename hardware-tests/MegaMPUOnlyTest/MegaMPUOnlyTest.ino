@@ -3,7 +3,7 @@
 #include <Wire.h>
 #include <math.h>
 
-const uint8_t MOTOR_PINS[] = {8, 6, 9, 7, 4, 2, 3, 5};
+const uint8_t MOTOR_PINS[] = {8, 6, 9, 7, 2, 3, 10, 11};
 uint8_t address = 0x68, chipId = 0;
 bool online = false, calibrating = true;
 uint16_t samples = 0;

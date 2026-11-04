@@ -14,7 +14,7 @@ static const float GYRO_Z_SIGN = 1.0f; // Positive yaw should mean counterclockw
 // Set an individual sign to -1 if that wheel spins backward for positive PWM.
 static const int8_t FL_SIGN = 1;
 static const int8_t FR_SIGN = 1;
-static const int8_t BL_SIGN = 1;
+static const int8_t BL_SIGN = -1;
 static const int8_t BR_SIGN = 1;
 static const float YAW_CORRECTION_SIGN = 1.0f; // Same convention as FastRoboCup.
 static const float HOLD_KP = 2.5f;
@@ -274,8 +274,8 @@ class MpuYaw {
 const uint8_t IR_ADDRESS = 0x08;
 const uint8_t FL1 = 8, FL2 = 6;
 const uint8_t FR1 = 9, FR2 = 7;
-const uint8_t BL1 = 4, BL2 = 2;
-const uint8_t BR1 = 3, BR2 = 5;
+const uint8_t BL1 = 2, BL2 = 3;
+const uint8_t BR1 = 10, BR2 = 11;
 const uint8_t MOTOR_PINS[8] = {FL1, FL2, FR1, FR2, BL1, BL2, BR1, BR2};
 
 const uint16_t IR_POLL_MS = 50;
@@ -479,7 +479,7 @@ void setup() {
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
   Serial.println(F("BOUNDED SEARCH: follow ball; if lost, sweep sideways and forward without turns."));
-  Serial.println(F("Pins FL 8/6 FR 9/7 BL 4/2 BR 3/5; s=stop g=follow c=recalibrate; use Newline"));
+  Serial.println(F("Pins FL 8/6 FR 9/7 BL 2/3 BR 10/11; s=stop g=follow c=recalibrate; use Newline"));
   beginCalibration();
 }
 

@@ -14,8 +14,10 @@ The robot follows the HiTechnic IR ball with MPU heading correction. With no bal
 | --- | ---: | ---: |
 | FL | 8 | 6 |
 | FR | 9 | 7 |
-| BL | 4 | 2 |
-| BR | 3 | 5 |
+| BL | 2 | 3 |
+| BR | 10 | 11 |
+
+Motor polarity in `RobotConfig.h`: FL +1, FR +1, **BL -1**, BR +1.
 
 Mega SDA is D20 and SCL is D21. IR address is 0x08; MPU is upstream at 0x68/0x69; TCA is 0x70, with one APDS at 0x39 per configured channel. Retain the previously checked sensor power and bus-level wiring. APDS IDs 0xAB, 0x9C, and the observed 0x9E are supported. The MPU6500 fix remains: supported stable IDs are 0x68, 0x70, and 0x74; this robot reported 0x70 at address 0x68.
 

@@ -1,6 +1,6 @@
 # Mega I2C and identity test
 
-Open `MegaI2CTest.ino` for Mega 2560. Set Serial Monitor to **115200 baud**. Mega SDA is D20 and SCL is D21. The motor outputs use the current pin map (FL 8/6, FR 9/7, BL 4/2, BR 3/5) and remain LOW.
+Open `MegaI2CTest.ino` for Mega 2560. Set Serial Monitor to **115200 baud**. Mega SDA is D20 and SCL is D21. The motor outputs use the current pin map (FL 8/6, FR 9/7, BL 2/3, BR 10/11) and remain LOW.
 
 The sketch scans 7-bit I2C addresses at 100 kHz. For a device acknowledging `0x68` or `0x69`, it reads register `0x75` three times. A stable `0x74` result matches the identity accepted by the current ball-search sketch's MPU reader. The bus address `0x68` and chip identity `0x74` are separate values.
 

@@ -18,8 +18,10 @@ Select **Arduino Mega or Mega 2560 / ATmega2560**. Open the `.ino` whose name ma
 | --- | --- | --- |
 | FL | D8 | D6 |
 | FR | D9 | D7 |
-| BL | D4 | D2 |
-| BR | D3 | D5 |
+| BL | D2 | D3 |
+| BR | D10 | D11 |
+
+Motor-test polarity defaults: `FL_SIGN=1`, `FR_SIGN=1`, `BL_SIGN=-1`, `BR_SIGN=1`.
 
 Each MDD3A channel uses two PWM inputs. Connect Mega ground, both driver grounds, and motor battery negative together. Motors receive power through the drivers' motor supply terminals. When powering the Mega by USB, leave driver 5VO outputs unconnected.
 

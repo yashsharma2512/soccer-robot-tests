@@ -14,8 +14,10 @@ The integrated movement sketch is `MegaBallSearchNoTurn`. The latest standalone 
 | --- | --- | --- |
 | Front left | D8 | D6 |
 | Front right | D9 | D7 |
-| Back left | D4 | D2 |
-| Back right | D3 | D5 |
+| Back left | D2 | D3 |
+| Back right | D10 | D11 |
+
+Motor polarity: `FL_SIGN=1`, `FR_SIGN=1`, `BL_SIGN=-1`, `BR_SIGN=1`. All movement sketches use these defaults; diagnostic sketches hold the same eight pins LOW.
 
 Each MDD3A channel uses two PWM control inputs. Connect Mega ground and both driver grounds together. Motor power goes to the drivers' motor supply terminals. Mega I2C is SDA D20 and SCL D21. Use the same IR power and signal wiring that worked in the IR-only test, and appropriate bus-voltage handling for the IMU.
 

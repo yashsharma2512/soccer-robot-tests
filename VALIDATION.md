@@ -1,5 +1,18 @@
 # Validation
 
+## Motor wiring and polarity - 5 November 2026
+
+All nine repository sketches now use FL 8/6, FR 9/7, BL 2/3, and BR 10/11.
+The three driving configurations use signs FL +1, FR +1, BL -1, BR +1;
+the sensor diagnostics stop those same eight pins. Wiring tables and inline
+pin maps were updated together, and source audits found no old motor map.
+
+All nine sketches compiled for `arduino:avr:mega` with Arduino AVR Boards
+1.8.6 and AVR GCC 7.3.0-atmel3.6.1-arduino7, producing final HEX files.
+The integrated main sketch uses **21,476 bytes flash** and **743 bytes
+static RAM**. No firmware was uploaded and no physical motion was tested.
+The boundary logic is unchanged; its earlier checks are recorded below.
+
 ## APDS boundary priority - 5 November 2026
 
 `MegaBallSearchNoTurn` now polls four APDS sensors on TCA channels 0-3,
