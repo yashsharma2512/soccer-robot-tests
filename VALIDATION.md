@@ -1,5 +1,36 @@
 # Validation
 
+## Gyro EEPROM and sequential calibration - 5 November 2026
+
+The integrated main sketch now saves the stationary Z-gyro offset at EEPROM
+bytes 64-79, separately from the APDS record at 0-29. Startup/rescan checks
+the connected MPU and loads a valid record; otherwise it calibrates/saves
+while stopped. Saved offsets require fresh live data before movement. The
+record checks version, address, identity, gyro configuration, finite/ranged
+bias, and CRC. Writes invalidate first, update one byte per loop, commit
+last, and verify the result. Heading itself is not persisted.
+
+`f` now forces a fresh gyro calibration/save before automatically starting
+the four-sensor field capture. White captures still use `1` through `4` and
+save line thresholds when complete. `c` refreshes/saves only the gyro.
+Pending calibration/saving blocks `g`; stop cancels the deferred field
+sequence, and gyro/save failures cannot start field capture.
+
+The actual main sketch passed executable host simulation in
+`verification/calibration_workflow.cpp`, using MSVC 19.44 C++14 and fake
+Arduino/Wire/EEPROM interfaces. Checks include gyro-first ordering, line and
+gyro save/reload, zero PWM and explicit enable, no EEPROM rewrite on load,
+fresh-data and hardware requirements, stop during sampling/saving, not-still
+failure, interrupted commits, invalid CRC/identity/configuration/NaN records,
+negative bias, failed write verification, and separate EEPROM address ranges.
+Byte writes advance simulated time. This does not validate physical bus or
+sensor timing.
+
+The Mega firmware compiled with Arduino AVR Boards 1.8.6 / AVR GCC
+7.3.0-atmel3.6.1-arduino7: **23,050 bytes flash**, **768 bytes static RAM**.
+No upload or hardware test was performed. A saved bias may need stationary
+recalibration when temperature changes; use `c` or the complete `f` procedure.
+
 ## Motor wiring and polarity - 5 November 2026
 
 All nine repository sketches now use FL 8/6, FR 9/7, BL 2/3, and BR 10/11.

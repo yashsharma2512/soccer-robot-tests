@@ -2,21 +2,29 @@
 #define MAGNUM_MPU_YAW_H
 #include <Arduino.h>
 #include <Wire.h>
+#include <EEPROM.h>
 #include <math.h>
+#include <string.h>
 #include "RobotConfig.h"
 #include "DriveLogic.h"
+#include "BoundaryLogic.h"
 
 class MpuYaw {
  public:
   enum Error { OK, NOT_FOUND, WRONG_ID, READ_FAILED, CONFIG_CHANGED,
-               NOT_STILL, NO_NEW_DATA, SAMPLE_GAP, CAL_TIMEOUT };
+               NOT_STILL, NO_NEW_DATA, SAMPLE_GAP, CAL_TIMEOUT, SAVE_FAILED, CAL_CANCELLED };
   MpuYaw() : address_(0x68), identity_(0), online_(false), calibrated_(false), calibrating_(false),
       error_(NOT_FOUND), count_(0), mean_(0), m2_(0), minimum_(0), maximum_(0),
       yaw_(0), rate_(0), lastPoll_(0), lastSampleMs_(0), lastSampleUs_(0),
-      lastConfigCheck_(0), calibrationStart_(0) {}
+      lastConfigCheck_(0), calibrationStart_(0), saving_(false), loaded_(false),
+      firstSample_(true), saveStep_(0) {}
 
-  bool startCalibration() {
+  // Startup/rescan may reuse EEPROM; f and c always request a fresh calibration.
+  bool startCalibration(bool useSaved = false) {
     online_ = calibrated_ = calibrating_ = false;
+    saving_ = loaded_ = false;
+    firstSample_ = true;
+    if (!useSaved) EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
     error_ = NOT_FOUND;
     identity_ = 0;
     bool responded = false;
@@ -62,6 +70,14 @@ class MpuYaw {
       calibrationStart_ = lastSampleMs_ = lastConfigCheck_ = millis();
       lastPoll_ = calibrationStart_;
       lastSampleUs_ = micros();
+      if (useSaved && loadCalibration()) {
+        loaded_ = true;
+        calibrating_ = false;
+        Serial.println(F("MPU calibration loaded from EEPROM; waiting for fresh data."));
+      } else {
+        EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
+        Serial.println(F("MPU: keep still; calibrating then saving gyro offset."));
+      }
       return true;
     }
     error_ = unstableRead ? READ_FAILED : (responded ? WRONG_ID : NOT_FOUND);
@@ -70,11 +86,15 @@ class MpuYaw {
 
   void service() {
     if (!online_) return;
+    if (saving_) {
+      saveOneByte();
+      if (!online_) return;
+    }
     uint32_t now = millis();
     if (calibrating_ && uint32_t(now - calibrationStart_) > cfg::GYRO_CAL_TIMEOUT_MS) {
       fail(CAL_TIMEOUT); return;
     }
-    if (calibrating_ && uint32_t(now - calibrationStart_) < 200) return;
+    if ((firstSample_ || calibrating_) && uint32_t(now - calibrationStart_) < 200) return;
     if (uint32_t(now - lastPoll_) < cfg::GYRO_POLL_MS) return;
     lastPoll_ = now;
 
@@ -87,6 +107,17 @@ class MpuYaw {
     }
     int16_t raw = int16_t((uint16_t(packet[13]) << 8) | packet[14]);
     uint32_t sampleUs = micros();
+
+    // A loaded offset is not healthy until a real sample arrives. Seed the
+    // integration clock here so startup settling cannot cause SAMPLE_GAP.
+    if (firstSample_ && !calibrating_) {
+      firstSample_ = false;
+      calibrated_ = true;
+      lastSampleMs_ = now;
+      lastSampleUs_ = sampleUs;
+      return;
+    }
+    firstSample_ = false;
 
     if (calibrating_) {
       float ax = int16_t((uint16_t(packet[1]) << 8) | packet[2]);
@@ -112,6 +143,7 @@ class MpuYaw {
         calibrating_ = false;
         calibrated_ = true;
         yaw_ = rate_ = 0;
+        startSave();
       }
       return;
     }
@@ -138,10 +170,18 @@ class MpuYaw {
   }
 
   bool healthy(uint32_t now) const {
-    return online_ && calibrated_ && uint32_t(now - lastSampleMs_) <= cfg::GYRO_STALE_MS;
+    return online_ && calibrated_ && !saving_ && uint32_t(now - lastSampleMs_) <= cfg::GYRO_STALE_MS;
   }
   bool calibrating() const { return calibrating_; }
   bool calibrated() const { return calibrated_; }
+  bool saving() const { return saving_; }
+  bool loaded() const { return loaded_; }
+  void cancelCalibration() {
+    if (calibrating_ || saving_) {
+      if (saving_) EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
+      fail(CAL_CANCELLED);
+    }
+  }
   uint16_t progress() const { return count_; }
   uint8_t address() const { return address_; }
   uint8_t identity() const { return identity_; }
@@ -157,6 +197,8 @@ class MpuYaw {
       case NO_NEW_DATA: return F("MPU_NO_NEW_DATA");
       case SAMPLE_GAP: return F("MPU_SAMPLE_GAP");
       case CAL_TIMEOUT: return F("MPU_CAL_TIMEOUT");
+      case SAVE_FAILED: return F("MPU_EEPROM_FAILED");
+      case CAL_CANCELLED: return F("MPU_CAL_CANCELLED");
     }
     return F("MPU_UNKNOWN_ERROR");
   }
@@ -166,6 +208,47 @@ class MpuYaw {
   void zero() { yaw_ = 0; lastSampleUs_ = micros(); }
 
  private:
+  static_assert(sizeof(float) == 4, "Gyro EEPROM record requires a 32-bit float");
+  static_assert(cfg::GYRO_EEPROM_BASE >= 0 && cfg::GYRO_EEPROM_BASE + 16 <= 4096,
+                "Gyro record must fit the Mega EEPROM");
+  bool loadCalibration() {
+    if (cfg::GYRO_EEPROM_BASE + 16 > EEPROM.length()) return false;
+    for (uint8_t i = 0; i < 16; ++i) record_[i] = EEPROM.read(cfg::GYRO_EEPROM_BASE + i);
+    uint16_t crc = uint16_t(record_[14]) | (uint16_t(record_[15]) << 8);
+    if (record_[0] != 'G' || record_[1] != 'Y' || record_[2] != 'R' || record_[3] != 'O' ||
+        record_[4] != 1 || record_[5] != address_ || record_[6] != identity_ ||
+        record_[7] != 0 || record_[8] != 4 || record_[9] != 3 ||
+        line::crc16(record_, 14) != crc) return false;
+    float bias;
+    memcpy(&bias, record_ + 10, sizeof(bias));
+    if (!isfinite(bias) || fabsf(bias) > 1310.0f) return false;
+    mean_ = bias;
+    return true;
+  }
+  void startSave() {
+    const uint8_t header[10] = {'G', 'Y', 'R', 'O', 1, address_, identity_, 0, 4, 3};
+    memcpy(record_, header, sizeof(header));
+    memcpy(record_ + 10, &mean_, sizeof(mean_));
+    uint16_t crc = line::crc16(record_, 14);
+    record_[14] = uint8_t(crc); record_[15] = uint8_t(crc >> 8);
+    saving_ = true; saveStep_ = 0;
+    Serial.println(F("MPU: saving gyro calibration; motors remain stopped."));
+  }
+  void saveOneByte() {
+    if (saveStep_ == 0) EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
+    else if (saveStep_ < 16) EEPROM.update(cfg::GYRO_EEPROM_BASE + saveStep_, record_[saveStep_]);
+    else {
+      EEPROM.update(cfg::GYRO_EEPROM_BASE, record_[0]);
+      saving_ = false;
+      float expected = mean_;
+      if (!loadCalibration() || mean_ != expected) {
+        EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
+        fail(SAVE_FAILED); return;
+      }
+      Serial.println(F("MPU calibration saved to EEPROM."));
+    }
+    ++saveStep_;
+  }
   bool write(uint8_t reg, uint8_t value) {
     Wire.clearWireTimeoutFlag();
     Wire.beginTransmission(address_);
@@ -189,6 +272,7 @@ class MpuYaw {
   void fail(Error error) {
     error_ = error;
     online_ = calibrated_ = calibrating_ = false;
+    saving_ = false;
   }
   uint8_t address_, identity_;
   bool online_, calibrated_, calibrating_;
@@ -198,5 +282,7 @@ class MpuYaw {
   int16_t minimum_, maximum_;
   float yaw_, rate_;
   uint32_t lastPoll_, lastSampleMs_, lastSampleUs_, lastConfigCheck_, calibrationStart_;
+  bool saving_, loaded_, firstSample_;
+  uint8_t saveStep_, record_[16];
 };
 #endif

@@ -6,6 +6,7 @@ static const uint16_t GYRO_POLL_MS = 5;
 static const uint16_t GYRO_STALE_MS = 50;
 static const uint16_t GYRO_CAL_SAMPLES = 500;
 static const uint32_t GYRO_CAL_TIMEOUT_MS = 7000;
+static const int GYRO_EEPROM_BASE = 64; // Bytes 64..79; APDS uses 0..29.
 static const float GYRO_Z_SIGN = 1.0f; // Positive yaw should mean counterclockwise.
 // Set an individual sign to -1 if that wheel spins backward for positive PWM.
 static const int8_t FL_SIGN = 1;

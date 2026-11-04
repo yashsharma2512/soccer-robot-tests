@@ -6,7 +6,7 @@ The robot follows the HiTechnic IR ball with MPU heading correction. With no bal
 
 **First edit the example channel/position map in BoundaryConfig.h.** The user requested editable placeholder positions: CH0 front, CH1 right, CH2 rear, CH3 left. Check the map on the actual robot before enabling motion.
 
-**The program starts stopped.** Calibrate with `f` over the playing field, then `1`, `2`, `3`, `4` with the corresponding sensor over white. Wait for `LINE calibration saved`, reposition onto the field, then send `g`. Calibration is retained in EEPROM for later starts. Full instructions, corner mappings, threshold behavior, fault states, and tuning are in **[BOUNDARY.md](BOUNDARY.md)**.
+**The program starts stopped.** Keep the robot still with all APDS sensors over the playing field and send `f`. It calibrates and saves the gyro first, then automatically captures the field. Wait for all four `FIELD sensor` results before using `1`, `2`, `3`, `4` with the corresponding sensor over white. Wait for `LINE calibration saved`, reposition onto the field, then send `g`. Both gyro offset and line thresholds are retained in EEPROM and loaded on later starts. Full instructions, corner mappings, threshold behavior, fault states, and tuning are in **[BOUNDARY.md](BOUNDARY.md)**.
 
 ## Connections
 
@@ -26,10 +26,12 @@ Mega SDA is D20 and SCL is D21. IR address is 0x08; MPU is upstream at 0x68/0x69
 Send one command per line. `s`, `x`, `0`, or space stops without waiting for newline and discards the rest of that line.
 
 - `g`: enable following only when all sensors/calibration are ready.
-- `f`: stop and capture the field under all four APDS sensors.
+- `f`: stop; calibrate and save the gyro while still, then automatically capture the field under all four APDS sensors.
 - `1` / `2` / `3` / `4`: stop and capture white for the corresponding sensor.
-- `c`: stop and recalibrate the MPU while stationary.
-- `b`: stop, rescan the line sensors, and restart gyro calibration.
+- `c`: stop; recalibrate and save just the gyro while stationary, preserving completed line thresholds.
+- `b`: stop, rescan the line sensors, and reload saved gyro/line calibration. A missing/invalid gyro record triggers fresh calibration and saving.
+
+Gyro saving uses EEPROM bytes 64-79, separate from the line record at 0-29, with a CRC and sensor/configuration checks. A loaded offset still requires fresh MPU data before movement. Saving an offset does not save an absolute compass heading: yaw starts at zero each boot. Temperature can change gyro bias; use stationary `c`, or the full `f` procedure, if heading drifts. `s` cancels a pending gyro/field procedure; retry `f` or `c` if gyro calibration was cancelled.
 
 With wheels lifted, show white to each sensor and check that retreat points away from its physical side. After all sensors clear for 120 ms, the robot resumes normal following. A retreat timeout or opposing edges stops in `LINE_BLOCKED`; reposition onto the field before `g`. There is no blind ball-search movement. A ball outside the forward sensor's view may remain unseen.
 

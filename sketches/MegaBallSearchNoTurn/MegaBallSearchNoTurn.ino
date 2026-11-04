@@ -7,6 +7,10 @@
 #include "MpuYaw.h"
 #include "BoundarySensors.h"
 
+static_assert(cfg::GYRO_EEPROM_BASE >= boundarycfg::EEPROM_BASE + 30 ||
+              cfg::GYRO_EEPROM_BASE + 16 <= boundarycfg::EEPROM_BASE,
+              "Gyro and line EEPROM records must not overlap");
+
 const uint8_t IR_ADDRESS = 0x08;
 const uint8_t FL1 = 8, FL2 = 6;
 const uint8_t FR1 = 9, FR2 = 7;
@@ -27,6 +31,7 @@ line::Escape lineEscape;
 drive::Wheels wheels = {0, 0, 0, 0};
 bool enabled = false; // Explicit g only after line calibration and healthy sensors.
 bool headingLocked = false;
+bool fieldAfterGyro = false;
 float targetYaw = 0;
 uint32_t lastIrPollMs = 0;
 uint32_t lastReportMs = 0;
@@ -97,26 +102,27 @@ void driveWithHeading(drive::Motion motion) {
   applyWheels(drive::mix(motion, MAX_WHEEL_PWM));
 }
 
-void beginCalibration() {
+void beginCalibration(bool useSaved = false) {
   stopMotors();
   enabled = false;
   lineEscape.reset();
   headingLocked = false;
+  fieldAfterGyro = false;
   state = F("CALIBRATING");
-  if (!imu.startCalibration()) {
+  if (!imu.startCalibration(useSaved)) {
     state = F("MPU_FAULT");
     Serial.print(F("MPU start failed, code "));
     Serial.print(uint8_t(imu.error()));
     Serial.print(F(" ")); Serial.println(MpuYaw::errorName(imu.error()));
   } else {
     reportedMpuError = MpuYaw::OK;
-    Serial.println(F("Keep robot still for MPU calibration."));
+    if (!imu.loaded()) Serial.println(F("Keep robot still for MPU calibration."));
   }
 }
 
 void executeCommand(char command) {
   if (command == 'g') {
-    if (!line::mayMove(true, boundary.calibrated(), boundary.healthy(millis()),
+    if (fieldAfterGyro || !line::mayMove(true, boundary.calibrated(), boundary.healthy(millis()),
                        imu.healthy(millis()), boundary.capturing(), boundary.saving())) {
       enabled = false;
       stopMotors();
@@ -130,22 +136,33 @@ void executeCommand(char command) {
   } else if (command == 'c') {
     boundary.cancelCapture();
     beginCalibration();
-  } else if (command == 'f' || (command >= '1' && command <= '4')) {
+  } else if (command == 'f') {
+    boundary.cancelCapture();
+    beginCalibration();
+    fieldAfterGyro = imu.calibrating();
+    if (fieldAfterGyro)
+      Serial.println(F("CAL: keep still over FIELD; gyro saves first, then field capture starts automatically."));
+  } else if (command >= '1' && command <= '4') {
     enabled = false;
     stopMotors();
     lineEscape.reset();
+    if (fieldAfterGyro || imu.calibrating() || imu.saving()) {
+      Serial.println(F("Wait for gyro save and FIELD capture before white captures."));
+      return;
+    }
     boundary.cancelCapture();
-    if (command == 'f') boundary.startField();
-    else boundary.startWhite(uint8_t(command - '1'));
+    boundary.startWhite(uint8_t(command - '1'));
   } else if (command == 'b') {
     enabled = false;
     stopMotors();
     boundary.begin();
-    beginCalibration();
+    beginCalibration(true);
   } else {
     enabled = false;
     stopMotors();
     state = F("STOPPED");
+    fieldAfterGyro = false;
+    imu.cancelCalibration();
     boundary.cancelCapture();
     lineEscape.reset();
     Serial.println(F("Stopped. g=go c=gyro f=field 1..4=white b=rescan."));
@@ -169,6 +186,8 @@ void handleSerial() {
       enabled = false;
       stopMotors();
       boundary.cancelCapture();
+      fieldAfterGyro = false;
+      imu.cancelCalibration();
       lineEscape.reset();
       state = F("STOPPED");
       if (!discardLine) Serial.println(F("Stopped. g=resume"));
@@ -208,9 +227,9 @@ void setup() {
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
   Serial.println(F("FOLLOW + APDS BOUNDARY. Starts stopped; edit BoundaryConfig.h side mapping."));
-  Serial.println(F("f=field; 1/2/3/4=white for sensors 1/2/3/4; g=go; s=stop; c=gyro; b=rescan"));
+  Serial.println(F("f=save gyro THEN field; 1/2/3/4=white; g=go; s=stop; c=save gyro; b=rescan/load"));
   boundary.begin();
-  beginCalibration();
+  beginCalibration(true);
 }
 
 bool handleBoundary(uint32_t now) {
@@ -262,12 +281,25 @@ void loop() {
     Serial.print(uint8_t(reportedMpuError));
     Serial.print(F(" ")); Serial.println(MpuYaw::errorName(reportedMpuError));
   }
+  if (fieldAfterGyro && imu.error() != MpuYaw::OK) {
+    fieldAfterGyro = false;
+    Serial.println(F("CAL aborted: gyro failed; no FIELD capture. Keep still and retry f."));
+  }
   if (!boundary.busIsolated()) {
     stopMotors(); state = F("LINE_MUX_FAULT"); report(now); return;
   }
   if (!imu.healthy(now)) {
     stopMotors();
-    if (!imu.calibrating()) state = F("MPU_FAULT");
+    state = imu.saving() ? F("MPU_SAVING") : imu.calibrating() ? F("CALIBRATING") :
+        imu.error() == MpuYaw::OK ? F("MPU_WAIT_DATA") : F("MPU_FAULT");
+    report(now);
+    return;
+  }
+  if (fieldAfterGyro) {
+    fieldAfterGyro = false;
+    stopMotors();
+    Serial.println(F("CAL: gyro saved; starting FIELD capture. Keep all four sensors over field."));
+    state = boundary.startField() ? F("LINE_CALIBRATING") : F("LINE_CAL_REQUIRED");
     report(now);
     return;
   }

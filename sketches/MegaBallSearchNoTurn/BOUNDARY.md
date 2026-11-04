@@ -21,7 +21,7 @@ Keep the existing motor wiring: FL 8/6, FR 9/7, BL 2/3, BR 10/11. APDS power and
 
 Select Mega 2560, upload the complete sketch folder, and open Serial Monitor at **115200 baud, Newline**. It starts with motors stopped. Keep the robot still during MPU calibration. Begin with wheels lifted or motor power disabled.
 
-1. Put **all four sensors over the normal playing surface** at their final mounted height and lighting. Send **f**. Wait for the four `FIELD sensor ...` lines.
+1. Put **all four sensors over the normal playing surface** at their final mounted height and lighting. Keep the robot completely still and send **f**. It first collects 500 gyro samples, saves the gyro offset, prints **MPU calibration saved to EEPROM**, and then starts the field capture automatically. Keep still and wait for all four `FIELD sensor ...` lines. A gyro/save failure aborts the sequence before field capture; fix it and retry `f`.
 2. Put **sensor 1** over the actual white tape at the same height. Send **1** and wait for its `WHITE sensor ... trip=... release=...` result.
 3. Repeat for sensor **2**, **3**, and **4**, sending the matching number. Only that sensor needs to be over white for its capture. Keep every sensor connected and receiving usable light throughout.
 4. Wait for **LINE calibration saved**. Move every sensor back over the playing surface. Send **g** to enable following after all readings and the gyro are healthy.
@@ -31,6 +31,10 @@ Each capture uses 32 fresh samples. Low contrast, inverted brightness, excessive
 The calibration derives separate per-sensor thresholds from measured field and white means. White must be at least 15% brighter than the field, with a gap of at least 8 counts and six times the sum of the measured standard deviations. White asserts at 45% of that gap above the field mean and releases at 25%; this hysteresis prevents rapid toggling near the threshold. These are starting criteria to validate on the actual tape and field.
 
 Valid thresholds are saved automatically to EEPROM **bytes 0-29**, with a CRC, version, channel list, gain, and integration-time signature. Saving updates one byte per loop with motors stopped, invalidating the record first and committing it last. Saved calibration loads after reboot; wait for the MPU and line sensors, then use `g`. Starting a new capture invalidates the old saved record, so an interrupted recalibration cannot silently restore old thresholds. Changing gain/time or channel wiring requires recalibration. Repeat calibration if lighting, mounting, or sensors change.
+
+The gyro offset is saved separately at **bytes 64-79**. Its record includes a CRC, version, MPU address/identity, gyro range, sample divider, and filter setting. The firmware checks the sensor before loading; invalid records trigger a fresh stationary gyro calibration and save. Loading still waits for fresh data before allowing `g`. Gyro EEPROM writes update one byte per loop, commit the marker last, and verify the result before field capture can start. `f` and `c` always recalibrate rather than reuse the saved bias. Motors remain stopped during calibration/saving, and `s` cancels the pending gyro/field sequence.
+
+Only the Z-axis zero-rate offset is saved, not an absolute heading. Yaw starts at zero after reboot. Bias can change with temperature; use `c` while still to refresh just the gyro, or `f` to redo the gyro and field procedure. With no valid gyro record, startup automatically calibrates/saves it; this does not automatically capture field/white values.
 
 ## Priority and retreat
 
@@ -52,10 +56,10 @@ The main program uses about **16.7 ms integration**, faster than the standalone 
 | --- | --- |
 | s / x / 0 / space | Immediate stop; cancel capture/retreat |
 | g + Enter | Start only when gyro, sensors, calibration, and EEPROM save are ready |
-| f + Enter | Stop; measure field under all sensors |
+| f + Enter | Stop; calibrate/save gyro first, then measure field under all sensors |
 | 1 / 2 / 3 / 4 + Enter | Stop; measure white under the selected sensor |
-| c + Enter | Stop; recalibrate gyro; does not erase completed line thresholds |
-| b + Enter | Stop; rescan APDS sensors, load saved line calibration, and restart gyro calibration |
+| c + Enter | Stop; recalibrate/save gyro; does not erase completed line thresholds |
+| b + Enter | Stop; rescan APDS sensors and load saved gyro/line records; calibrate/save gyro if its record is invalid |
 
 Calibration commands always stop movement. Use a separate `g` after completion. `c` or stop during a capture cancels that unfinished capture. Use `f` before new white captures after reboot/rescan, because the stored record contains thresholds rather than the original field sample statistics.
 
