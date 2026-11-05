@@ -132,40 +132,63 @@ LINE_FN uint16_t crc16(const uint8_t *data, uint8_t count) {
   }
   return crc;
 }
-struct EscapeResult { int8_t forward, strafe; bool ownsDrive, fault, cleared; };
+struct EscapeResult { int8_t forward, strafe; bool ownsDrive, paused, cleared; };
 class Escape {
  public:
-  LINE_FN Escape() : active_(false), failed_(false), clearing_(false),
-      started_(0), clearSince_(0), seen_(0) {}
-  LINE_FN void reset() { active_ = failed_ = clearing_ = false; seen_ = 0; }
-  LINE_FN bool failed() const { return failed_; }
+  LINE_FN Escape() : active_(false), clearing_(false), paused_(false),
+      started_(0), clearSince_(0), pauseStart_(0), lastSides_(0),
+      forward_(0), strafe_(0) {}
+  LINE_FN void reset() {
+    active_ = clearing_ = paused_ = false;
+    lastSides_ = 0; forward_ = strafe_ = 0;
+  }
   LINE_FN EscapeResult update(uint8_t sides, uint32_t now, uint16_t timeoutMs, uint16_t clearMs) {
-    if (failed_) return {0, 0, true, true, false};
     if (!active_) {
       if (!sides) return {0, 0, false, false, false};
-      active_ = true; clearing_ = false; started_ = now; seen_ = 0;
-    }
-    seen_ |= sides;
-    if (((seen_ & FRONT) && (seen_ & REAR)) || ((seen_ & LEFT) && (seen_ & RIGHT)) ||
-        uint32_t(now - started_) >= timeoutMs) {
-      failed_ = true;
-      return {0, 0, true, true, false};
+      active_ = true; clearing_ = paused_ = false; started_ = now;
+      lastSides_ = 0; forward_ = strafe_ = 0;
     }
     if (!sides) {
       if (!clearing_) { clearing_ = true; clearSince_ = now; }
       if (uint32_t(now - clearSince_) >= clearMs) {
-        active_ = clearing_ = false;
+        reset();
         return {0, 0, true, false, true};
       }
-    } else clearing_ = false;
-    int8_t forward = (seen_ & REAR) ? 1 : ((seen_ & FRONT) ? -1 : 0);
-    int8_t strafe = (seen_ & LEFT) ? 1 : ((seen_ & RIGHT) ? -1 : 0);
-    return {forward, strafe, true, false, false};
+      return {0, 0, true, true, false}; // Wait for a stable clear reading.
+    }
+    clearing_ = false;
+    uint8_t newlySeen = sides & uint8_t(~lastSides_);
+    forward_ = axisDirection(sides, newlySeen, FRONT, REAR, forward_);
+    strafe_ = axisDirection(sides, newlySeen, RIGHT, LEFT, strafe_);
+    lastSides_ = sides;
+    if (paused_) {
+      if (uint32_t(now - pauseStart_) < clearMs) return {0, 0, true, true, false};
+      paused_ = false;
+      started_ = now;
+    }
+    if (uint32_t(now - started_) >= timeoutMs) {
+      paused_ = true; pauseStart_ = now;
+      return {0, 0, true, true, false}; // Brief brake, then retry automatically.
+    }
+    if (!forward_ && !strafe_) return {0, 0, true, true, false};
+    return {forward_, strafe_, true, false, false};
   }
  private:
-  bool active_, failed_, clearing_;
-  uint32_t started_, clearSince_;
-  uint8_t seen_;
+  LINE_FN static int8_t axisDirection(uint8_t sides, uint8_t newlySeen,
+                                      uint8_t negativeSide, uint8_t positiveSide,
+                                      int8_t previous) {
+    bool negative = sides & negativeSide, positive = sides & positiveSide;
+    if (negative && !positive) return -1;
+    if (positive && !negative) return 1;
+    if (!negative && !positive) return 0;
+    if ((newlySeen & negativeSide) && !(newlySeen & positiveSide)) return -1;
+    if ((newlySeen & positiveSide) && !(newlySeen & negativeSide)) return 1;
+    return previous; // Both edges: retain the last unambiguous escape direction.
+  }
+  bool active_, clearing_, paused_;
+  uint32_t started_, clearSince_, pauseStart_;
+  uint8_t lastSides_;
+  int8_t forward_, strafe_;
 };
 }
 #undef LINE_FN
@@ -1090,16 +1113,14 @@ bool handleBoundary(uint32_t now) {
     stopMotors(); state = F("LINE_CAL_REQUIRED"); return true;
   }
   if (!enabled) {
-    stopMotors(); state = lineEscape.failed() ? F("LINE_BLOCKED") : F("STOPPED"); return true;
+    stopMotors(); state = F("STOPPED"); return true;
   }
   uint8_t sides = line::sideMask(boundary.hitMask(), boundarycfg::SIDES, boundarycfg::SENSOR_COUNT);
   line::EscapeResult escape = lineEscape.update(sides, now,
       boundarycfg::ESCAPE_TIMEOUT_MS, boundarycfg::CLEAR_MS);
   if (!escape.ownsDrive) return false;
-  if (escape.fault) {
-    enabled = false;
-    stopMotors(); state = F("LINE_BLOCKED");
-    Serial.println(F("LINE: retreat timed out or opposing edges. Reposition on field, then r."));
+  if (escape.paused) {
+    stopMotors(); state = F("LINE_HOLD");
   } else if (escape.cleared) {
     stopMotors(); state = F("LINE_CLEARED");
   } else {
@@ -1143,7 +1164,7 @@ void loop() {
     Serial.println(F("MPU ready; holding heading."));
   }
   if (handleBoundary(now)) {
-    searchStarted = false; searchFinished = true;
+    searchStarted = false; searchFinished = false; lastBallSeenMs = now;
     report(now);
     return;
   }
@@ -1177,7 +1198,7 @@ void loop() {
     return;
   }
   if (handleBoundary(now)) {
-    searchStarted = false; searchFinished = true;
+    searchStarted = false; searchFinished = false; lastBallSeenMs = now;
     report(now); return;
   }
 
