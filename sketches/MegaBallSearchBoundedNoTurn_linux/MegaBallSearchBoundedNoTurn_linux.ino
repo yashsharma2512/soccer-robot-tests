@@ -487,10 +487,12 @@ class MpuYaw {
 class BoundarySensors {
  public:
   BoundarySensors() : isolated_(false), running_(false), saving_(false),
-      next_(0), saveStep_(0), capture_(-1), lastSlot_(0), captureStart_(0) {}
+      next_(0), saveStep_(0), capture_(-1), pendingCapture_(-1), preparing_(false),
+      lastSlot_(0), captureStart_(0), prepareStart_(0) {}
 
   bool begin() {
-    running_ = false; capture_ = -1; saving_ = false; next_ = 0;
+    running_ = false; capture_ = pendingCapture_ = -1;
+    preparing_ = saving_ = false; next_ = 0;
     for (uint8_t i = 0; i < count; ++i) sensors_[i] = Sensor{};
     if (!select(0)) { Serial.println(F("LINE: mux unavailable")); return false; }
     if (!line::validLayout(boundarycfg::CHANNELS, boundarycfg::SIDES, count)) {
@@ -535,6 +537,22 @@ class BoundarySensors {
     if (!isolated_) { select(0); return; }
     if (!running_) return;
     uint32_t now = millis();
+    if (preparing_ && uint32_t(now - prepareStart_) >= CAL_PREPARE_MS) {
+      preparing_ = false;
+      if (!healthy(now)) {
+        pendingCapture_ = -1;
+        Serial.println(F("LINE preparation failed: sensor data not fresh; retry capture."));
+        return;
+      }
+      capture_ = pendingCapture_;
+      pendingCapture_ = -1;
+      captureStart_ = now;
+      if (capture_ == -2) Serial.println(F("LINE: collecting FIELD now; hold all sensors on green."));
+      else {
+        Serial.print(F("LINE: collecting WHITE now for sensor "));
+        Serial.println(capture_ + 1);
+      }
+    }
     if (capture_ != -1 && uint32_t(now - captureStart_) > boundarycfg::CAL_TIMEOUT_MS) {
       capture_ = -1;
       Serial.println(F("LINE calibration timeout; check sensors and repeat."));
@@ -596,8 +614,11 @@ class BoundarySensors {
       sensors_[i].threshold.valid = sensors_[i].white = false;
     }
     EEPROM.update(boundarycfg::EEPROM_BASE, 0);
-    capture_ = -2; captureStart_ = millis();
-    Serial.println(F("LINE: collecting FIELD on all four sensors; motors stopped."));
+    capture_ = -1;
+    pendingCapture_ = -2;
+    preparing_ = true;
+    prepareStart_ = millis();
+    Serial.println(F("LINE: 3 seconds to put all four sensors over GREEN; motors braked."));
     return true;
   }
   bool startWhite(uint8_t i) {
@@ -608,12 +629,17 @@ class BoundarySensors {
     stats_[i] = Stats{};
     sensors_[i].threshold.valid = sensors_[i].white = false;
     EEPROM.update(boundarycfg::EEPROM_BASE, 0);
-    capture_ = int8_t(i); captureStart_ = millis();
-    Serial.print(F("LINE: collecting WHITE for sensor ")); Serial.println(i + 1);
+    capture_ = -1;
+    pendingCapture_ = int8_t(i);
+    preparing_ = true;
+    prepareStart_ = millis();
+    Serial.print(F("LINE: 3 seconds to put sensor "));
+    Serial.print(i + 1); Serial.println(F(" over WHITE; motors braked."));
     return true;
   }
-  void cancelCapture() { capture_ = -1; }
-  bool capturing() const { return capture_ != -1; }
+  void cancelCapture() { capture_ = pendingCapture_ = -1; preparing_ = false; }
+  bool capturing() const { return capture_ != -1 || preparing_; }
+  bool preparing() const { return preparing_; }
   bool saving() const { return saving_; }
   bool busIsolated() const { return isolated_; }
   bool calibrated() const {
@@ -655,6 +681,7 @@ class BoundarySensors {
 
  private:
   static const uint8_t count = boundarycfg::SENSOR_COUNT;
+  static const uint16_t CAL_PREPARE_MS = 3000;
   static_assert(count == 4, "Calibration commands support four boundary sensors");
   static_assert(boundarycfg::CAL_SAMPLES >= 2, "Calibration needs multiple fresh samples");
   static_assert(boundarycfg::EEPROM_BASE >= 0 && boundarycfg::EEPROM_BASE + 30 <= 4096,
@@ -798,8 +825,9 @@ class BoundarySensors {
   uint8_t record_[30] = {};
   bool isolated_, running_, saving_;
   uint8_t next_, saveStep_;
-  int8_t capture_;
-  uint32_t lastSlot_, captureStart_;
+  int8_t capture_, pendingCapture_;
+  bool preparing_;
+  uint32_t lastSlot_, captureStart_, prepareStart_;
 };
 
 // Mega 2560: HiTechnic IR Seeker V2 + MPU heading-held ball follower.
@@ -863,7 +891,7 @@ void applyWheels(drive::Wheels next) {
   motorPair(BR1, BR2, next.br * cfg::BR_SIGN);
 }
 
-void stopMotors() { applyWheels({0, 0, 0, 0}); }
+void stopMotors() { applyWheels({0, 0, 0, 0}); } // MDD3A LOW/LOW = brake.
 
 // Preserve the user's tested AC read: register 0x49, direction plus 5 levels.
 bool readIR(uint8_t &direction, uint16_t &strength) {
@@ -981,7 +1009,8 @@ void executeCommand(char command) {
     searchFinished = true;
     stopMotors();
     lineEscape.reset();
-    if (fieldAfterGyro || imu.calibrating() || imu.saving()) {
+    if (fieldAfterGyro || imu.calibrating() || imu.saving() ||
+        boundary.capturing() || boundary.saving()) {
       Serial.println(F("Wait for gyro save and FIELD capture before white captures."));
       return;
     }
@@ -1075,7 +1104,7 @@ void setup() {
 
 bool handleBoundary(uint32_t now) {
   if (boundary.capturing()) {
-    stopMotors(); state = F("LINE_CALIBRATING"); return true;
+    stopMotors(); state = boundary.preparing() ? F("LINE_PREPARE") : F("LINE_CALIBRATING"); return true;
   }
   if (boundary.saving()) {
     stopMotors(); state = F("LINE_SAVING"); return true;
@@ -1140,7 +1169,7 @@ void loop() {
   if (fieldAfterGyro) {
     fieldAfterGyro = false;
     stopMotors();
-    Serial.println(F("CAL: gyro saved; starting FIELD capture. Keep all four sensors over field."));
+    Serial.println(F("CAL: gyro saved; FIELD preparation begins. Move sensors to green."));
     state = boundary.startField() ? F("LINE_CALIBRATING") : F("LINE_CAL_REQUIRED");
     report(now);
     return;
