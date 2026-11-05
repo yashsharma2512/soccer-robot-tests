@@ -1,5 +1,41 @@
 # Validation
 
+## Continuous play and automatic line escape - 5 November 2026
+
+The main `MegaBallSearchNoTurn` and the green-only `test code linux full`
+entry point now repeat short sideways/forward searches until a valid ball
+appears. Each 1.95-second cycle has a 200 ms pause; neither program has a
+terminal SEARCH_DONE. Ball detection returns to FOLLOW on the next valid
+IR poll. White-line escape owns the drive before either search or follow.
+Current adjacent detections command diagonal escape; opposing detections
+hold zero PWM until resolved. After 650 ms escape brakes for 120 ms and
+retries; 120 ms stable clear releases play automatically. Calibrated bright
+saturation counts as a boundary, while calibration saturation is rejected.
+Manual stop, calibration, missing calibration, and sensor faults still stop
+motion. Main f/white/EEPROM and Linux full c/green/auto-start workflows remain.
+
+Both actual-sketch `play_workflow.cpp` host runs passed: over four consecutive
+search rounds, follow/reacquisition, all four escape directions, corners,
+timeout retry, stable clear, ambiguity recovery, saturation, search/line
+priority, IR/APDS/MPU faults, APDS rescan, and manual stop during both search
+and escape. The main gyro-first `calibration_workflow.cpp` regression passed.
+All 33 AVR C++14 boundary assertions passed, including all 16 edge masks,
+automatic recovery, hysteresis, movement guards, timer rollover, and CRC.
+Host tests use MSVC C++14 with simulated Wire/EEPROM and byte-write latency.
+
+Both sketches compiled for Mega 2560 using Arduino AVR Boards 1.8.6 and
+AVR GCC 7.3.0-atmel3.6.1-arduino7:
+
+| Entry point | Flash bytes | Static RAM bytes |
+| --- | ---: | ---: |
+| MegaBallSearchNoTurn | 23,908 | 834 |
+| test code linux full | 23,872 | 812 |
+
+No firmware upload or physical motion test was performed. Verify the editable
+sensor-side mapping and all four escape directions on the chassis before play.
+The separate `MegaBallSearchBoundedNoTurn_linux` retains its bounded-search
+behaviour and is not the continuous-play entry point.
+
 ## Gyro EEPROM and sequential calibration - 5 November 2026
 
 The integrated main sketch now saves the stationary Z-gyro offset at EEPROM

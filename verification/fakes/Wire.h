@@ -6,6 +6,8 @@ struct FakeWire {
   uint8_t mpu[256] = {}, apds[4][256] = {}, ir[256] = {};
   uint8_t mux = 0, address = 0, reg = 0;
   bool mpuPresent = true;
+  bool irPresent = true;
+  int missingApds = -1;
   std::vector<uint8_t> tx;
   std::deque<uint8_t> rx;
   FakeWire() {
@@ -20,8 +22,9 @@ struct FakeWire {
   }
   uint8_t *device() {
     if (address == 0x68 && mpuPresent) return mpu;
-    if (address == 0x08) return ir;
-    if (address == 0x39) for (int i = 0; i < 4; ++i) if (mux & (1 << i)) return apds[i];
+    if (address == 0x08 && irPresent) return ir;
+    if (address == 0x39) for (int i = 0; i < 4; ++i)
+      if ((mux & (1 << i)) && i != missingApds) return apds[i];
     return nullptr;
   }
   void begin() {}

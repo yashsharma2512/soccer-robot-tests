@@ -56,40 +56,44 @@ LINE_FN uint16_t crc16(const uint8_t *data, uint8_t count) {
   }
   return crc;
 }
-struct EscapeResult { int8_t forward, strafe; bool ownsDrive, fault, cleared; };
+struct EscapeResult { int8_t forward, strafe; bool ownsDrive, paused, cleared; };
 class Escape {
  public:
-  LINE_FN Escape() : active_(false), failed_(false), clearing_(false),
-      started_(0), clearSince_(0), seen_(0) {}
-  LINE_FN void reset() { active_ = failed_ = clearing_ = false; seen_ = 0; }
-  LINE_FN bool failed() const { return failed_; }
+  LINE_FN Escape() : active_(false), clearing_(false), paused_(false),
+      started_(0), clearSince_(0), pauseStart_(0) {}
+  LINE_FN void reset() { active_ = clearing_ = paused_ = false; }
   LINE_FN EscapeResult update(uint8_t sides, uint32_t now, uint16_t timeoutMs, uint16_t clearMs) {
-    if (failed_) return {0, 0, true, true, false};
     if (!active_) {
       if (!sides) return {0, 0, false, false, false};
-      active_ = true; clearing_ = false; started_ = now; seen_ = 0;
-    }
-    seen_ |= sides;
-    if (((seen_ & FRONT) && (seen_ & REAR)) || ((seen_ & LEFT) && (seen_ & RIGHT)) ||
-        uint32_t(now - started_) >= timeoutMs) {
-      failed_ = true;
-      return {0, 0, true, true, false};
+      active_ = true; clearing_ = paused_ = false; started_ = now;
     }
     if (!sides) {
       if (!clearing_) { clearing_ = true; clearSince_ = now; }
       if (uint32_t(now - clearSince_) >= clearMs) {
-        active_ = clearing_ = false;
+        reset();
         return {0, 0, true, false, true};
       }
-    } else clearing_ = false;
-    int8_t forward = (seen_ & REAR) ? 1 : ((seen_ & FRONT) ? -1 : 0);
-    int8_t strafe = (seen_ & LEFT) ? 1 : ((seen_ & RIGHT) ? -1 : 0);
+      return {0, 0, true, true, false}; // Brake while confirming stable clear.
+    }
+    clearing_ = false;
+    // Never drive toward another currently active boundary to resolve ambiguity.
+    if (((sides & FRONT) && (sides & REAR)) || ((sides & LEFT) && (sides & RIGHT)))
+      return {0, 0, true, true, false};
+    if (paused_) {
+      if (uint32_t(now - pauseStart_) < clearMs) return {0, 0, true, true, false};
+      paused_ = false; started_ = now;
+    }
+    if (uint32_t(now - started_) >= timeoutMs) {
+      paused_ = true; pauseStart_ = now;
+      return {0, 0, true, true, false}; // Retry from fresh readings after a short brake.
+    }
+    int8_t forward = (sides & REAR) ? 1 : ((sides & FRONT) ? -1 : 0);
+    int8_t strafe = (sides & LEFT) ? 1 : ((sides & RIGHT) ? -1 : 0);
     return {forward, strafe, true, false, false};
   }
  private:
-  bool active_, failed_, clearing_;
-  uint32_t started_, clearSince_;
-  uint8_t seen_;
+  bool active_, clearing_, paused_;
+  uint32_t started_, clearSince_, pauseStart_;
 };
 }
 #undef LINE_FN

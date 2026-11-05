@@ -1,5 +1,5 @@
 // Mega 2560: HiTechnic IR Seeker V2 + MPU heading-held ball follower.
-// Ball visible: follow with heading correction. Ball lost: stop and keep reading.
+// Ball visible: follow. Ball lost: repeat search. White line: escape first.
 #include <Arduino.h>
 #include <Wire.h>
 #include "DriveLogic.h"
@@ -22,6 +22,11 @@ const uint16_t IR_POLL_MS = 50;
 const uint16_t REPORT_MS = 200;
 const uint8_t MIN_STRENGTH = 1;
 const float CHASE_PWM = 75;
+const float SEARCH_PWM = 60;
+const uint16_t BALL_LOST_GRACE_MS = 200;
+const uint16_t SEARCH_SIDE_MS = 250;
+const uint16_t SEARCH_FORWARD_MS = 150;
+const uint16_t SEARCH_TOTAL_MS = 6 * SEARCH_SIDE_MS + 3 * SEARCH_FORWARD_MS;
 const float MAX_HEADING_PWM = 30;
 const int16_t MAX_WHEEL_PWM = boundarycfg::FOLLOW_WHEEL_CAP;
 
@@ -32,6 +37,10 @@ drive::Wheels wheels = {0, 0, 0, 0};
 bool enabled = false; // Explicit g only after line calibration and healthy sensors.
 bool headingLocked = false;
 bool fieldAfterGyro = false;
+bool searchStarted = false;
+int8_t preferredSide = 1;
+uint32_t lastBallSeenMs = 0; // Also starts the brief pause after escape/search reset.
+uint32_t searchStartMs = 0;
 float targetYaw = 0;
 uint32_t lastIrPollMs = 0;
 uint32_t lastReportMs = 0;
@@ -102,12 +111,33 @@ void driveWithHeading(drive::Motion motion) {
   applyWheels(drive::mix(motion, MAX_WHEEL_PWM));
 }
 
+// Repeat short sideways/forward sweeps, holding heading without deliberate turns.
+drive::Motion searchMotion(uint32_t elapsed) {
+  float side = preferredSide < 0 ? -SEARCH_PWM : SEARCH_PWM;
+  if (elapsed < SEARCH_SIDE_MS) return {0, side, 0};
+  elapsed -= SEARCH_SIDE_MS;
+  if (elapsed < SEARCH_FORWARD_MS) return {SEARCH_PWM, 0, 0};
+  elapsed -= SEARCH_FORWARD_MS;
+  if (elapsed < 2UL * SEARCH_SIDE_MS) return {0, -side, 0};
+  elapsed -= 2UL * SEARCH_SIDE_MS;
+  if (elapsed < SEARCH_FORWARD_MS) return {SEARCH_PWM, 0, 0};
+  elapsed -= SEARCH_FORWARD_MS;
+  if (elapsed < 2UL * SEARCH_SIDE_MS) return {0, side, 0};
+  elapsed -= 2UL * SEARCH_SIDE_MS;
+  if (elapsed < SEARCH_FORWARD_MS) return {SEARCH_PWM, 0, 0};
+  elapsed -= SEARCH_FORWARD_MS;
+  if (elapsed < SEARCH_SIDE_MS) return {0, -side, 0};
+  return {0, 0, 0};
+}
+
 void beginCalibration(bool useSaved = false) {
   stopMotors();
   enabled = false;
   lineEscape.reset();
   headingLocked = false;
   fieldAfterGyro = false;
+  searchStarted = false;
+  lastBallSeenMs = millis();
   state = F("CALIBRATING");
   if (!imu.startCalibration(useSaved)) {
     state = F("MPU_FAULT");
@@ -131,8 +161,10 @@ void executeCommand(char command) {
     }
     lineEscape.reset();
     enabled = true;
+    searchStarted = false;
+    lastBallSeenMs = millis();
     targetYaw = imu.yaw();
-    Serial.println(F("Following enabled; boundary takes priority."));
+    Serial.println(F("Continuous search/follow enabled; white-line escape takes priority."));
   } else if (command == 'c') {
     boundary.cancelCapture();
     beginCalibration();
@@ -226,7 +258,7 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
-  Serial.println(F("FOLLOW + APDS BOUNDARY. Starts stopped; edit BoundaryConfig.h side mapping."));
+  Serial.println(F("CONTINUOUS SEARCH/FOLLOW + APDS ESCAPE. Starts stopped; edit BoundaryConfig.h side mapping."));
   Serial.println(F("f=save gyro THEN field; 1/2/3/4=white; g=go; s=stop; c=save gyro; b=rescan/load"));
   boundary.begin();
   beginCalibration(true);
@@ -246,16 +278,14 @@ bool handleBoundary(uint32_t now) {
     stopMotors(); state = F("LINE_CAL_REQUIRED"); return true;
   }
   if (!enabled) {
-    stopMotors(); state = lineEscape.failed() ? F("LINE_BLOCKED") : F("STOPPED"); return true;
+    stopMotors(); state = F("STOPPED"); return true;
   }
   uint8_t sides = line::sideMask(boundary.hitMask(), boundarycfg::SIDES, boundarycfg::SENSOR_COUNT);
   line::EscapeResult escape = lineEscape.update(sides, now,
       boundarycfg::ESCAPE_TIMEOUT_MS, boundarycfg::CLEAR_MS);
   if (!escape.ownsDrive) return false;
-  if (escape.fault) {
-    enabled = false;
-    stopMotors(); state = F("LINE_BLOCKED");
-    Serial.println(F("LINE: retreat timed out or opposing edges. Reposition on field, then g."));
+  if (escape.paused) {
+    stopMotors(); state = F("LINE_HOLD");
   } else if (escape.cleared) {
     stopMotors(); state = F("LINE_CLEARED");
   } else {
@@ -276,6 +306,7 @@ void loop() {
   uint32_t now = millis();
 
   if (imu.error() != MpuYaw::OK && imu.error() != reportedMpuError) {
+    stopMotors();
     reportedMpuError = imu.error();
     Serial.print(F("MPU fault, code "));
     Serial.print(uint8_t(reportedMpuError));
@@ -289,6 +320,7 @@ void loop() {
     stopMotors(); state = F("LINE_MUX_FAULT"); report(now); return;
   }
   if (!imu.healthy(now)) {
+    searchStarted = false; lastBallSeenMs = now;
     stopMotors();
     state = imu.saving() ? F("MPU_SAVING") : imu.calibrating() ? F("CALIBRATING") :
         imu.error() == MpuYaw::OK ? F("MPU_WAIT_DATA") : F("MPU_FAULT");
@@ -306,9 +338,11 @@ void loop() {
   if (!headingLocked) {
     targetYaw = imu.yaw();
     headingLocked = true;
+    lastBallSeenMs = now;
     Serial.println(F("MPU ready; holding heading."));
   }
   if (handleBoundary(now)) {
+    searchStarted = false; lastBallSeenMs = now;
     report(now);
     return;
   }
@@ -322,6 +356,7 @@ void loop() {
     lastDirection = 0;
     lastStrength = 0;
     state = F("IR_FAULT");
+    searchStarted = false; lastBallSeenMs = millis();
     Serial.println(F("IR read failed; stopped. Retrying automatically."));
     report(millis());
     return;
@@ -340,14 +375,33 @@ void loop() {
     report(now);
     return;
   }
-  if (handleBoundary(now)) { report(now); return; }
+  if (handleBoundary(now)) {
+    searchStarted = false; lastBallSeenMs = now;
+    report(now); return;
+  }
 
   if (direction >= 1 && strength >= MIN_STRENGTH) {
+    lastBallSeenMs = now;
+    searchStarted = false;
+    if (direction < 5) preferredSide = -1;
+    else if (direction > 5) preferredSide = 1;
     state = F("FOLLOW");
     driveWithHeading(motionForBall(direction));
-  } else {
+  } else if (uint32_t(now - lastBallSeenMs) < BALL_LOST_GRACE_MS) {
     stopMotors();
     state = F("WAIT_BALL");
+  } else {
+    if (!searchStarted) { searchStartMs = now; searchStarted = true; }
+    uint32_t elapsed = uint32_t(now - searchStartMs);
+    if (elapsed >= SEARCH_TOTAL_MS) {
+      stopMotors();
+      searchStarted = false;
+      lastBallSeenMs = now;
+      state = F("SEARCH_PAUSE");
+    } else {
+      state = F("SEARCH");
+      driveWithHeading(searchMotion(elapsed));
+    }
   }
   report(now);
 }

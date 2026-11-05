@@ -38,13 +38,13 @@ Only the Z-axis zero-rate offset is saved, not an absolute heading. Yaw starts a
 
 ## Priority and retreat
 
-- Ball following only runs with calibrated, fresh, healthy line sensors and a healthy MPU.
-- A white reading immediately takes control away from ball following, even when no ball is visible.
+- Ball searching/following only runs with calibrated, fresh, healthy line sensors and a healthy MPU.
+- A white reading takes control away from both searching and following, even when no ball is visible.
 - Front white commands backward retreat; rear white commands forward retreat; right white commands left; left white commands right. Adjacent/corner detections combine into a diagonal retreat, with gyro heading correction.
-- The detected sides remain remembered during a retreat. A newly detected opposite edge stops rather than choosing an ambiguous direction.
-- Retreat continues until all sensors have been below their release thresholds for 120 ms. It stops for that control pass, then normal IR following can resume automatically.
-- A retreat lasting 650 ms, or opposing edge detections, stops and latches `LINE_BLOCKED`. Reposition the robot onto the field, check the mapping, and send `g` to retry. Manual stop also cancels a retreat.
-- Any missing, stale, saturated, or failed line-sensor data sets wheel output to zero. A mux deselection failure blocks use of the shared MPU/IR bus until isolation recovers. APDS configuration loss requires `b` to rescan/reinitialize.
+- Escape direction is recomputed from current detections. Opposing edge detections brake in `LINE_HOLD`; the program reevaluates automatically and resumes escape when the direction becomes unambiguous.
+- Once all sensors drop below their release thresholds, the robot brakes while confirming 120 ms stable clear. It then resumes following if the ball is visible, or starts a fresh search after the normal 200 ms pause.
+- A retreat lasting 650 ms gets a 120 ms brake, then automatically retries using fresh readings. There is no latched boundary timeout. Manual stop still cancels escape and requires `g` to resume.
+- A calibrated sensor that saturates during play counts as a bright boundary and prints `SAT`; saturation during calibration is rejected. Missing, stale, failed, or unconfigured line-sensor data sets wheel output to zero. A mux deselection failure blocks use of the shared MPU/IR bus until isolation recovers. APDS configuration loss requires `b` to rescan/reinitialize.
 
 `BoundaryConfig.h` exposes retreat PWM, wheel caps, clear time, timeout, sampling, and stale-data limits. Defaults are retreat PWM 70, retreat wheel cap 100, and following wheel cap 90. These are not measured motor calibration. Start with wheels lifted and verify the resulting direction for each sensor before a slow floor test.
 
@@ -63,8 +63,8 @@ The main program uses about **16.7 ms integration**, faster than the standalone 
 
 Calibration commands always stop movement. Use a separate `g` after completion. `c` or stop during a capture cancels that unfinished capture. Use `f` before new white captures after reboot/rescan, because the stored record contains thresholds rather than the original field sample statistics.
 
-Telemetry includes `line=0x...`, a bit mask in sensor order (1, 2, 4, 8), and `C=a/b/c/d`. An exclamation mark indicates unusable/stale data; `L1=...` etc. names missing, read, saturation, configuration, or stale/wait faults. Relevant states are `LINE_CAL_REQUIRED`, `LINE_CALIBRATING`, `LINE_SAVING`, `LINE_SENSOR_FAULT`, `LINE_MUX_FAULT`, `LINE_ESCAPE`, `LINE_CLEARED`, and `LINE_BLOCKED`. `STOPPED` requires `g`; `MPU_FAULT` requires fixing the sensor and stationary `c` recalibration. Valid ball readings use `FOLLOW`; no ball uses `WAIT_BALL` with continued polling.
+Telemetry includes `line=0x...`, a bit mask in sensor order (1, 2, 4, 8), and `C=a/b/c/d`. An exclamation mark indicates unusable/stale data; `L1=...` etc. names missing, read, saturation, configuration, or stale/wait faults. Relevant states are `LINE_CAL_REQUIRED`, `LINE_CALIBRATING`, `LINE_SAVING`, `LINE_SENSOR_FAULT`, `LINE_MUX_FAULT`, `LINE_ESCAPE`, `LINE_CLEARED`, and `LINE_HOLD`. `STOPPED` requires `g`; `MPU_FAULT` requires fixing the sensor and stationary `c` recalibration. Valid ball readings use `FOLLOW`; no ball cycles through `WAIT_BALL`, `SEARCH`, and `SEARCH_PAUSE` with continued polling, without a terminal search state.
 
 ## Verification
 
-The software checks in `verification/boundary_scenarios.cpp` evaluate the actual BoundaryLogic.h functions using AVR C++14 constant expressions. They cover all 16 edge masks, mounting validity, calibration contrast and hysteresis, motion guards, bounded retreat, clear timing, explicit reset, wraparound, and CRC. Firmware uses the normal Arduino C++11 setting. Physical validation is still required; see the bench checklist in `verification/README.md`.
+The software checks in `verification/boundary_scenarios.cpp` evaluate the actual BoundaryLogic.h functions using AVR C++14 constant expressions. They cover all 16 edge masks, mounting validity, calibration contrast and hysteresis, motion guards, timed escape retry, clear timing, automatic ambiguity recovery, wraparound, and CRC. Executable `play_workflow.cpp` tests exercise actual-sketch search/follow/escape behaviour for both maintained play entry points. Firmware uses the normal Arduino C++11 setting. Physical validation is still required; see the bench checklist in `verification/README.md`.

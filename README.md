@@ -4,7 +4,8 @@ Arduino Mega 2560 sketches for a four-motor soccer robot with two Cytron MDD3A d
 
 | Sketch | Purpose |
 | --- | --- |
-| [MegaBallSearchNoTurn](sketches/MegaBallSearchNoTurn) | Simple IR follower with MPU heading correction and calibrated APDS boundary priority |
+| [MegaBallSearchNoTurn](sketches/MegaBallSearchNoTurn) | Continuous IR search/follow with MPU heading correction and calibrated APDS escape |
+| [Test code Linux full](sketches/test%20code%20linux%20full) | Single-file automatic play variant with green-only calibration; c=gyro, g=green, r=resume |
 | [MegaIROnlyTest](sketches/MegaIROnlyTest) | IR direction and strength diagnostic; motors held LOW |
 | [MegaI2CTest](sketches/MegaI2CTest) | I2C scan and three MPU identity reads; motors held LOW |
 
@@ -27,6 +28,6 @@ Open `sketches/MegaBallSearchNoTurn/MegaBallSearchNoTurn.ino` with all six heade
 
 Keep still over the field and send `f`: the gyro is calibrated and saved first, then field capture starts automatically. Wait for all four field results; capture white for each sensor with `1`, `2`, `3`, and `4`. Wait for `LINE calibration saved`, reposition onto the field, then use `g`. Gyro offset and line thresholds are saved separately to EEPROM and loaded after reboot; `c` refreshes/saves only the gyro. White-line detection overrides ball following with a short retreat; stale/faulty sensors block movement. [Boundary mapping, calibration, and commands](sketches/MegaBallSearchNoTurn/BOUNDARY.md).
 
-If the ball disappears, the robot stops and keeps reading IR, resuming when the ball returns. IR read failures stop and retry; MPU faults require stationary `c` recalibration. There is no timed ball search. Send `s` to stop. [Main sketch instructions](sketches/MegaBallSearchNoTurn/README.md).
+If the ball disappears, the robot repeats 1.95-second sideways/forward searches with 200 ms pauses until the ball returns. White-line detections override search/follow, command movement away, and automatically release play after a stable clear. Long escapes pause/retry; ambiguous opposite detections hold until resolved. IR read failures stop and retry; MPU faults require stationary `c` recalibration. Send `s` to stop. [Main sketch instructions](sketches/MegaBallSearchNoTurn/README.md).
 
 **Lift the wheels for the first test.** Check wheel polarity, gyro correction, and the retreat direction for each APDS sensor before floor testing. APDS sensors detect local brightness contrast; the MPU measures relative heading. These do not provide global position or guaranteed boundary/goal avoidance. See [validation](VALIDATION.md).

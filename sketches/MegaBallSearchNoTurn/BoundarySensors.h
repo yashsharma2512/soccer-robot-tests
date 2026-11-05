@@ -89,7 +89,9 @@ class BoundarySensors {
     }
     if (!select(0)) return; // Always close the mux before the shared MPU/IR bus is used.
     now = millis();
-    if (!ok || saturated) {
+    bool brightSaturation = saturated && ok && newData && capture_ == -1 &&
+                            sensor.threshold.valid;
+    if (!ok || (saturated && !brightSaturation)) {
       sensor.good = false;
       if (sensor.configured) sensor.fault = saturated ? SATURATED : READ_ERROR;
       if (newData && ok) sensor.clear = clear;
@@ -97,7 +99,8 @@ class BoundarySensors {
     }
     if (!newData) return; // Older valid samples expire via healthy().
     sensor.clear = clear; sensor.fresh = now; sensor.good = true; sensor.fault = NONE;
-    sensor.white = line::whiteNow(sensor.white, clear, sensor.threshold);
+    sensor.brightSaturated = brightSaturation;
+    sensor.white = brightSaturation || line::whiteNow(sensor.white, clear, sensor.threshold);
 
     if (capture_ == -2 || capture_ == int8_t(i)) {
       Stats &stats = stats_[i];
@@ -159,7 +162,8 @@ class BoundarySensors {
     Serial.print(F(" C="));
     for (uint8_t i = 0; i < count; ++i) {
       if (i) Serial.print('/');
-      Serial.print(sensors_[i].clear);
+      if (sensors_[i].brightSaturated && sensors_[i].good) Serial.print(F("SAT"));
+      else Serial.print(sensors_[i].clear);
       if (!sensors_[i].good || uint32_t(millis() - sensors_[i].fresh) > boundarycfg::MAX_AGE_MS)
         Serial.print('!');
     }
@@ -184,6 +188,7 @@ class BoundarySensors {
   enum Fault : uint8_t { NONE, WAITING, MISSING, READ_ERROR, SATURATED, CONFIG_ERROR };
   struct Sensor {
     bool configured = false, good = false, white = false, floorReady = false;
+    bool brightSaturated = false;
     uint16_t clear = 0;
     uint32_t fresh = 0, configChecked = 0;
     float floorMean = 0, floorNoise = 0;

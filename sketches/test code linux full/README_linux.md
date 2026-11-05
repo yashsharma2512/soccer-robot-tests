@@ -12,7 +12,7 @@ ball-following code runs automatically.
 | --- | --- |
 | `c` | Recalibrate and save the MPU gyro. Keep the robot still until it finishes; normal running then resumes automatically. |
 | `g` | Calibrate all four boundary sensors over the green/dark field only. There is a 3-second placement window, then 32 readings per sensor. Normal running resumes after `LINE calibration saved` if all sensors are healthy. |
-| `r` | Resume after a manual stop, or retry a finished ball search. |
+| `r` | Resume after a manual stop, or restart the current search cycle. |
 | `s` | Stop immediately and brake the motors. `x`, `0`, and space also stop. |
 | `b` | Rescan boundary sensors and reload saved calibration. |
 
@@ -51,19 +51,20 @@ calibration no longer matters because this sketch has no white capture.
 - MDD3A motor inputs: FL 8/6, FR 9/7, BL 2/3, BR 10/11. Back-left polarity is inverted in software. LOW/LOW brakes each motor.
 
 The robot follows a detected ball while holding its MPU heading. After a
-short lost-ball pause, it searches sideways and forward for at most 1.95 s.
+200 ms lost-ball pause, it searches sideways and forward for 1.95 s, pauses
+200 ms, and repeats until the ball is detected.
 Boundary escape has priority. A front sensor commands backward motion; rear
 commands forward; right commands left; left commands right. Corner hits combine
-the two directions. If opposing sides trigger together, the most recently
-triggered side or last unambiguous escape direction is used. If there is no
-direction to choose, the robot brakes in `LINE_HOLD` and reevaluates on the next
-sensor readings; it does not latch a manual-reset fault. A retreat lasting 650 ms
+the two directions. If opposing sides trigger together, the robot brakes in
+`LINE_HOLD` and reevaluates on the next sensor readings. It resumes when the
+direction becomes unambiguous; it never chooses a direction into another
+currently active boundary. A retreat lasting 650 ms
 gets a 120 ms brake before automatically trying again. Once all boundary
 sensors have been clear for 120 ms, normal ball following resumes, or a fresh
 ball search starts after the usual 200 ms lost-ball pause.
 
-The ball search ends stopped if the ball remains unseen; a later ball sighting
-resumes following. Send `r` to retry a finished search or resume after `s`.
+Ball search repeats continuously while the ball remains unseen; a ball sighting
+immediately resumes following. Send `r` to resume after `s`.
 Communication faults, stale boundary data, missing calibration, and MPU faults
 still brake the robot until healthy. The code compiles for Mega 2560; motor
 direction and boundary behavior still need testing on the physical robot.

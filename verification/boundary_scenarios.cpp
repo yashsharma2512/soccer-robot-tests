@@ -48,9 +48,9 @@ constexpr bool everyEdgeMovesAway() {
     bool opposed = ((mask & line::FRONT) && (mask & line::REAR)) ||
                    ((mask & line::LEFT) && (mask & line::RIGHT));
     if (opposed) {
-      if (!result.fault || result.forward || result.strafe) return false;
+      if (!result.paused || result.forward || result.strafe) return false;
     } else {
-      if (result.fault) return false;
+      if (result.paused) return false;
       if ((mask & line::FRONT) && result.forward >= 0) return false;
       if ((mask & line::REAR) && result.forward <= 0) return false;
       if ((mask & line::RIGHT) && result.strafe >= 0) return false;
@@ -70,7 +70,7 @@ constexpr bool clearRequiresTime() {
   return clear.cleared && clear.ownsDrive && !clear.forward && !clear.strafe &&
          !escape.update(0, 221, 650, 120).ownsDrive;
 }
-static_assert(clearRequiresTime(), "Retreat must persist until stable clear then release control to following");
+static_assert(clearRequiresTime(), "Escape must own drive until stable clear then release control to play");
 
 constexpr bool reappearingLineRestartsClear() {
   line::Escape escape;
@@ -82,32 +82,34 @@ constexpr bool reappearingLineRestartsClear() {
 }
 static_assert(reappearingLineRestartsClear(), "A new white reading restarts the clear interval");
 
-constexpr bool timeoutLatches() {
+constexpr bool timeoutRetries() {
   line::Escape escape;
   escape.update(line::RIGHT, 1000, 650, 120);
-  if (escape.update(line::RIGHT, 1649, 650, 120).fault) return false;
+  if (escape.update(line::RIGHT, 1649, 650, 120).paused) return false;
   auto result = escape.update(line::RIGHT, 1650, 650, 120);
-  if (!result.fault || result.forward || result.strafe || !escape.failed()) return false;
-  if (!escape.update(0, 1800, 650, 120).fault) return false;
-  escape.reset();
-  return !escape.failed() && !escape.update(0, 1801, 650, 120).ownsDrive;
+  if (!result.paused || result.forward || result.strafe) return false;
+  if (!escape.update(line::RIGHT, 1769, 650, 120).paused) return false;
+  auto retry = escape.update(line::RIGHT, 1770, 650, 120);
+  return !retry.paused && retry.strafe == -1 && retry.ownsDrive;
 }
-static_assert(timeoutLatches(), "Stalled retreat must stop and stay latched until explicit reset");
+static_assert(timeoutRetries(), "Long escape brakes briefly then retries automatically from fresh readings");
 
 constexpr bool evolvingCorner() {
   line::Escape escape;
   escape.update(line::FRONT, 0, 650, 120);
-  auto corner = escape.update(line::RIGHT, 20, 650, 120);
+  auto corner = escape.update(line::FRONT | line::RIGHT, 20, 650, 120);
   if (corner.forward != -1 || corner.strafe != -1) return false;
-  auto opposed = escape.update(line::REAR, 40, 650, 120);
-  return opposed.fault && !opposed.forward && !opposed.strafe;
+  auto opposed = escape.update(line::FRONT | line::REAR, 40, 650, 120);
+  if (!opposed.paused || opposed.forward || opposed.strafe) return false;
+  auto recovered = escape.update(line::REAR, 60, 650, 120);
+  return !recovered.paused && recovered.forward == 1 && recovered.strafe == 0;
 }
-static_assert(evolvingCorner(), "New adjacent hits combine; an opposing hit stops the retreat");
+static_assert(evolvingCorner(), "Current adjacent hits combine; ambiguity holds then recovers without manual reset");
 
 constexpr bool rollover() {
   line::Escape escape;
   escape.update(line::FRONT, 0xFFFFFFF0UL, 650, 120);
-  if (escape.update(line::FRONT, 0x10, 650, 120).fault) return false;
+  if (escape.update(line::FRONT, 0x10, 650, 120).paused) return false;
   escape.update(0, 0x20, 650, 120);
   return escape.update(0, 0x98, 650, 120).cleared;
 }

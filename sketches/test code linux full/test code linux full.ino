@@ -136,17 +136,12 @@ struct EscapeResult { int8_t forward, strafe; bool ownsDrive, paused, cleared; }
 class Escape {
  public:
   LINE_FN Escape() : active_(false), clearing_(false), paused_(false),
-      started_(0), clearSince_(0), pauseStart_(0), lastSides_(0),
-      forward_(0), strafe_(0) {}
-  LINE_FN void reset() {
-    active_ = clearing_ = paused_ = false;
-    lastSides_ = 0; forward_ = strafe_ = 0;
-  }
+      started_(0), clearSince_(0), pauseStart_(0) {}
+  LINE_FN void reset() { active_ = clearing_ = paused_ = false; }
   LINE_FN EscapeResult update(uint8_t sides, uint32_t now, uint16_t timeoutMs, uint16_t clearMs) {
     if (!active_) {
       if (!sides) return {0, 0, false, false, false};
       active_ = true; clearing_ = paused_ = false; started_ = now;
-      lastSides_ = 0; forward_ = strafe_ = 0;
     }
     if (!sides) {
       if (!clearing_) { clearing_ = true; clearSince_ = now; }
@@ -154,41 +149,27 @@ class Escape {
         reset();
         return {0, 0, true, false, true};
       }
-      return {0, 0, true, true, false}; // Wait for a stable clear reading.
+      return {0, 0, true, true, false}; // Brake while confirming stable clear.
     }
     clearing_ = false;
-    uint8_t newlySeen = sides & uint8_t(~lastSides_);
-    forward_ = axisDirection(sides, newlySeen, FRONT, REAR, forward_);
-    strafe_ = axisDirection(sides, newlySeen, RIGHT, LEFT, strafe_);
-    lastSides_ = sides;
+    // Never drive toward another currently active boundary to resolve ambiguity.
+    if (((sides & FRONT) && (sides & REAR)) || ((sides & LEFT) && (sides & RIGHT)))
+      return {0, 0, true, true, false};
     if (paused_) {
       if (uint32_t(now - pauseStart_) < clearMs) return {0, 0, true, true, false};
-      paused_ = false;
-      started_ = now;
+      paused_ = false; started_ = now;
     }
     if (uint32_t(now - started_) >= timeoutMs) {
       paused_ = true; pauseStart_ = now;
-      return {0, 0, true, true, false}; // Brief brake, then retry automatically.
+      return {0, 0, true, true, false}; // Retry from fresh readings after a short brake.
     }
-    if (!forward_ && !strafe_) return {0, 0, true, true, false};
-    return {forward_, strafe_, true, false, false};
+    int8_t forward = (sides & REAR) ? 1 : ((sides & FRONT) ? -1 : 0);
+    int8_t strafe = (sides & LEFT) ? 1 : ((sides & RIGHT) ? -1 : 0);
+    return {forward, strafe, true, false, false};
   }
  private:
-  LINE_FN static int8_t axisDirection(uint8_t sides, uint8_t newlySeen,
-                                      uint8_t negativeSide, uint8_t positiveSide,
-                                      int8_t previous) {
-    bool negative = sides & negativeSide, positive = sides & positiveSide;
-    if (negative && !positive) return -1;
-    if (positive && !negative) return 1;
-    if (!negative && !positive) return 0;
-    if ((newlySeen & negativeSide) && !(newlySeen & positiveSide)) return -1;
-    if ((newlySeen & positiveSide) && !(newlySeen & negativeSide)) return 1;
-    return previous; // Both edges: retain the last unambiguous escape direction.
-  }
   bool active_, clearing_, paused_;
   uint32_t started_, clearSince_, pauseStart_;
-  uint8_t lastSides_;
-  int8_t forward_, strafe_;
 };
 }
 #undef LINE_FN
@@ -905,7 +886,6 @@ drive::Wheels wheels = {0, 0, 0, 0};
 bool enabled = false; // Setup enables automatic running after sensor safety checks.
 bool headingLocked = false;
 bool searchStarted = false;
-bool searchFinished = false;
 int8_t preferredSide = 1;
 float targetYaw = 0;
 uint32_t lastBallSeenMs = 0;
@@ -1004,7 +984,6 @@ void beginCalibration(bool useSaved = false) {
   lineEscape.reset();
   headingLocked = false;
   searchStarted = false;
-  searchFinished = false;
   lastBallSeenMs = millis();
   state = F("CALIBRATING");
   if (!imu.startCalibration(useSaved)) {
@@ -1030,10 +1009,9 @@ void executeCommand(char command) {
     lineEscape.reset();
     enabled = true;
     searchStarted = false;
-    searchFinished = false;
     lastBallSeenMs = millis();
     targetYaw = imu.yaw();
-    Serial.println(F("Following/search enabled; boundary takes priority."));
+    Serial.println(F("Continuous search/follow enabled; boundary takes priority."));
   } else if (command == 'c') {
     boundary.cancelCapture();
     beginCalibration();
@@ -1041,7 +1019,6 @@ void executeCommand(char command) {
   } else if (command == 'g') {
     enabled = false;
     searchStarted = false;
-    searchFinished = false;
     stopMotors();
     lineEscape.reset();
     if (imu.calibrating() || imu.saving()) {
@@ -1052,7 +1029,6 @@ void executeCommand(char command) {
   } else if (command == 'b') {
     enabled = false;
     searchStarted = false;
-    searchFinished = true;
     stopMotors();
     boundary.begin();
     beginCalibration(true);
@@ -1060,7 +1036,6 @@ void executeCommand(char command) {
   } else {
     enabled = false;
     searchStarted = false;
-    searchFinished = true;
     stopMotors();
     state = F("STOPPED");
     imu.cancelCalibration();
@@ -1086,7 +1061,6 @@ void handleSerial() {
     } else if (command == 's' || command == 'x' || command == '0' || command == ' ') {
       enabled = false;
       searchStarted = false;
-      searchFinished = true;
       stopMotors();
       boundary.cancelCapture();
       imu.cancelCalibration();
@@ -1129,7 +1103,7 @@ void setup() {
   Wire.begin();
   Wire.setClock(100000);
   Wire.setWireTimeout(25000, true);
-  Serial.println(F("FOLLOW + BOUNDED SEARCH + APDS BOUNDARY. Auto-runs when ready; edit boundarycfg::SIDES."));
+  Serial.println(F("FOLLOW + CONTINUOUS SEARCH + APDS ESCAPE. Auto-runs when ready; edit boundarycfg::SIDES."));
   Serial.println(F("c=calibrate MPU; g=calibrate GREEN; s=stop; r=resume; b=rescan/load"));
   boundary.begin();
   beginCalibration(true);
@@ -1186,7 +1160,7 @@ void loop() {
     if (reportedMpuError == MpuYaw::READ_FAILED) imu.printLastReadFailure();
   }
   if (!boundary.busIsolated()) {
-    searchStarted = false; searchFinished = true;
+    searchStarted = false;
     stopMotors(); state = F("LINE_MUX_FAULT"); report(now); return;
   }
   if (!imu.healthy(now)) {
@@ -1203,7 +1177,7 @@ void loop() {
     Serial.println(F("MPU ready; holding heading."));
   }
   if (handleBoundary(now)) {
-    searchStarted = false; searchFinished = false; lastBallSeenMs = now;
+    searchStarted = false; lastBallSeenMs = now;
     report(now);
     return;
   }
@@ -1217,7 +1191,7 @@ void loop() {
     lastDirection = 0;
     lastStrength = 0;
     state = F("IR_FAULT");
-    searchStarted = false; searchFinished = true;
+    searchStarted = false;
     Serial.println(F("IR read failed; stopped. Retrying automatically."));
     report(millis());
     return;
@@ -1237,14 +1211,13 @@ void loop() {
     return;
   }
   if (handleBoundary(now)) {
-    searchStarted = false; searchFinished = false; lastBallSeenMs = now;
+    searchStarted = false; lastBallSeenMs = now;
     report(now); return;
   }
 
   if (direction >= 1 && strength >= MIN_STRENGTH) {
     lastBallSeenMs = now;
     searchStarted = false;
-    searchFinished = false;
     if (direction < 5) preferredSide = -1;
     else if (direction > 5) preferredSide = 1;
     state = F("FOLLOW");
@@ -1252,9 +1225,6 @@ void loop() {
   } else if (uint32_t(now - lastBallSeenMs) < BALL_LOST_GRACE_MS) {
     stopMotors();
     state = F("WAIT_BALL");
-  } else if (searchFinished) {
-    stopMotors();
-    state = F("SEARCH_DONE");
   } else {
     if (!searchStarted) {
       searchStartMs = now;
@@ -1264,9 +1234,8 @@ void loop() {
     if (elapsed >= SEARCH_TOTAL_MS) {
       stopMotors();
       searchStarted = false;
-      searchFinished = true;
-      state = F("SEARCH_DONE");
-      Serial.println(F("Bounded search finished; ball unseen. g=retry search."));
+      lastBallSeenMs = now;
+      state = F("SEARCH_PAUSE");
     } else {
       state = F("SEARCH");
       driveWithHeading(searchMotion(elapsed));

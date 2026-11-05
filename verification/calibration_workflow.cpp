@@ -29,6 +29,7 @@ void reboot() {
   fakeUs = 0; Wire = FakeWire(); Serial = FakeSerial();
   imu = MpuYaw(); boundary = BoundarySensors(); lineEscape = line::Escape();
   enabled = headingLocked = fieldAfterGyro = false;
+  searchStarted = false; preferredSide = 1; lastBallSeenMs = searchStartMs = 0;
   wheels = {0, 0, 0, 0}; targetYaw = 0;
   lastIrPollMs = lastReportMs = 0; lastDirection = 0; lastStrength = 0;
   reportedMpuError = MpuYaw::OK;
