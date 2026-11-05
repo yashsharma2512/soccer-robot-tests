@@ -67,3 +67,15 @@ resumes following. Send `r` to retry a finished search or resume after `s`.
 Communication faults, stale boundary data, missing calibration, and MPU faults
 still brake the robot until healthy. The code compiles for Mega 2560; motor
 direction and boundary behavior still need testing on the physical robot.
+
+## MPU read failures
+
+`id=0x70` is a supported MPU identity. `MPU_READ_FAILED` means an I2C transfer
+failed after the MPU was found. This sketch retries each MPU read once. The
+`mpu_retries=` count increases when the second attempt succeeds. If both
+attempts fail, the motors brake and an `MPU I2C` line prints the register,
+failed step, Wire status, byte count, and timeout flag. A retry can absorb an
+occasional glitch, but repeated errors need a wiring or power fix. Compare
+`mpu_retries` with motor power connected and disconnected; also check common
+ground, MPU supply voltage, SDA/SCL connections, and routing away from motor
+wires. Send `b` to rescan after correcting a persistent read fault.
