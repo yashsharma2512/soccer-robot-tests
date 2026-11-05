@@ -235,13 +235,16 @@ class MpuYaw {
       error_(NOT_FOUND), count_(0), mean_(0), m2_(0), minimum_(0), maximum_(0),
       yaw_(0), rate_(0), lastPoll_(0), lastSampleMs_(0), lastSampleUs_(0),
       lastConfigCheck_(0), calibrationStart_(0), saving_(false), loaded_(false),
-      firstSample_(true), saveStep_(0) {}
+      firstSample_(true), saveStep_(0), recoveredReads_(0),
+      readFailure_{0, 0, 0, 0, false, false}, hasReadFailure_(false) {}
 
   // Startup/rescan may reuse EEPROM; f and c always request a fresh calibration.
   bool startCalibration(bool useSaved = false) {
     online_ = calibrated_ = calibrating_ = false;
     saving_ = loaded_ = false;
     firstSample_ = true;
+    recoveredReads_ = 0;
+    hasReadFailure_ = false;
     if (!useSaved) EEPROM.update(cfg::GYRO_EEPROM_BASE, 0);
     error_ = NOT_FOUND;
     identity_ = 0;
@@ -404,6 +407,18 @@ class MpuYaw {
   uint8_t address() const { return address_; }
   uint8_t identity() const { return identity_; }
   Error error() const { return error_; }
+  uint16_t recoveredReads() const { return recoveredReads_; }
+  void printLastReadFailure() const {
+    if (!hasReadFailure_) return;
+    Serial.print(F("MPU I2C address=0x")); Serial.print(address_, HEX);
+    Serial.print(F(" register=0x")); Serial.print(readFailure_.reg, HEX);
+    Serial.print(F(" step="));
+    Serial.print(readFailure_.selecting ? F("register-select") : F("data-read"));
+    Serial.print(F(" wire_status=")); Serial.print(readFailure_.txStatus);
+    Serial.print(F(" bytes=")); Serial.print(readFailure_.received);
+    Serial.print('/'); Serial.print(readFailure_.expected);
+    Serial.print(F(" timeout=")); Serial.println(readFailure_.timeout ? F("yes") : F("no"));
+  }
   static const __FlashStringHelper *errorName(Error error) {
     switch (error) {
       case OK: return F("OK");
@@ -468,6 +483,7 @@ class MpuYaw {
     ++saveStep_;
   }
   bool write(uint8_t reg, uint8_t value) {
+    hasReadFailure_ = false;
     Wire.clearWireTimeoutFlag();
     Wire.beginTransmission(address_);
     Wire.write(reg); Wire.write(value);
@@ -475,17 +491,31 @@ class MpuYaw {
     return result == 0 && !Wire.getWireTimeoutFlag();
   }
   bool read(uint8_t reg, uint8_t *buffer, uint8_t length) {
-    Wire.clearWireTimeoutFlag();
-    Wire.beginTransmission(address_);
-    Wire.write(reg);
-    if (Wire.endTransmission(false) != 0) return false;
-    uint8_t received = Wire.requestFrom(address_, length);
-    if (Wire.getWireTimeoutFlag() || received != length) {
-      while (Wire.available()) Wire.read();
-      return false;
+    for (uint8_t attempt = 0; attempt < 2; ++attempt) {
+      Wire.clearWireTimeoutFlag();
+      Wire.beginTransmission(address_);
+      Wire.write(reg);
+      uint8_t txStatus = Wire.endTransmission(false);
+      bool timedOut = Wire.getWireTimeoutFlag();
+      if (txStatus != 0 || timedOut) {
+        readFailure_ = {reg, txStatus, 0, length, true, timedOut};
+        hasReadFailure_ = true;
+        continue;
+      }
+      uint8_t received = Wire.requestFrom(address_, length);
+      timedOut = Wire.getWireTimeoutFlag();
+      if (timedOut || received != length) {
+        while (Wire.available()) Wire.read();
+        readFailure_ = {reg, txStatus, received, length, false, timedOut};
+        hasReadFailure_ = true;
+        continue;
+      }
+      for (uint8_t i = 0; i < length; ++i) buffer[i] = Wire.read();
+      if (attempt) ++recoveredReads_;
+      hasReadFailure_ = false;
+      return true;
     }
-    for (uint8_t i = 0; i < length; ++i) buffer[i] = Wire.read();
-    return true;
+    return false;
   }
   void fail(Error error) {
     error_ = error;
@@ -502,6 +532,12 @@ class MpuYaw {
   uint32_t lastPoll_, lastSampleMs_, lastSampleUs_, lastConfigCheck_, calibrationStart_;
   bool saving_, loaded_, firstSample_;
   uint8_t saveStep_, record_[16];
+  uint16_t recoveredReads_;
+  struct ReadFailure {
+    uint8_t reg, txStatus, received, expected;
+    bool selecting, timeout;
+  } readFailure_;
+  bool hasReadFailure_;
 };
 
 // Inlined BoundarySensors.h
@@ -1075,6 +1111,7 @@ void report(uint32_t now) {
   Serial.print(F(" yaw=")); Serial.print(imu.yaw(), 1);
   Serial.print(F(" mpu=")); Serial.print(MpuYaw::errorName(imu.error()));
   Serial.print(F(" id=0x")); Serial.print(imu.identity(), HEX);
+  Serial.print(F(" mpu_retries=")); Serial.print(imu.recoveredReads());
   boundary.printReadings();
   Serial.print(F(" PWM="));
   Serial.print(wheels.fl); Serial.print('/');
@@ -1141,10 +1178,12 @@ void loop() {
   uint32_t now = millis();
 
   if (imu.error() != MpuYaw::OK && imu.error() != reportedMpuError) {
+    stopMotors();
     reportedMpuError = imu.error();
     Serial.print(F("MPU fault, code "));
     Serial.print(uint8_t(reportedMpuError));
     Serial.print(F(" ")); Serial.println(MpuYaw::errorName(reportedMpuError));
+    if (reportedMpuError == MpuYaw::READ_FAILED) imu.printLastReadFailure();
   }
   if (!boundary.busIsolated()) {
     searchStarted = false; searchFinished = true;
