@@ -13,17 +13,26 @@ match the physical robot before enabling movement.
 
 ## Setup
 
-1. Lift the wheels. Place all four APDS sensors over the normal field surface
-   at their mounted height. Keep the robot still and send `f` followed by Enter.
-   The gyro calibrates and saves first, then the field capture runs.
-2. Place each sensor over the white boundary in turn and send its number
-   (`1`, `2`, `3`, or `4`) followed by Enter. Wait for `LINE calibration saved`.
+1. Lift the wheels and send `f` followed by Enter while keeping the robot still
+   for gyro calibration and saving. When the gyro is saved, a **3-second FIELD
+   preparation window** begins. Move all four APDS sensors over the normal
+   green playing surface at their mounted height. Hold them still once the
+   sketch prints `LINE: collecting FIELD now`.
+2. After all four `FIELD sensor` results appear, send `1`, `2`, `3`, or `4`
+   for the sensor you want to capture over white. Each command provides a
+   **3-second WHITE preparation window** to reposition that sensor. Hold it
+   still when `LINE: collecting WHITE now` appears. Wait for its `WHITE sensor`
+   result before starting the next one. Wait for `LINE calibration saved` after
+   all four sensors have been captured.
 3. Put every sensor back over the field and send `g` followed by Enter.
    A saved gyro offset and line calibration can reload on later boots, but the
    robot still starts stopped and requires `g`.
 
 The motor inputs are FL 8/6, FR 9/7, BL 2/3, BR 10/11. The back-left motor
 polarity is inverted in software. Mega I2C uses SDA 20 and SCL 21.
+During preparation, capture, manual stop, and boundary faults, both MDD3A
+inputs for each motor are held LOW. The MDD3A datasheet calls LOW/LOW **brake**;
+this sketch already brakes when it sets wheel PWM to zero.
 
 ## Ball search and boundary priority
 
@@ -44,7 +53,7 @@ direction with the wheels lifted before trying the robot on the floor.
 The MPU and all four boundary sensors must be healthy before movement.
 Calibration and saving stop the motors. An MPU fault requires stationary `c`
 recalibration. An IR read error stops motion and retries the read. The field
-capture and line threshold procedure matches the main sketch's
+capture and line threshold procedure otherwise matches the main sketch's
 `sketches/MegaBallSearchNoTurn/BOUNDARY.md`.
 
 The sketch compiles for Arduino Mega 2560. Its physical behavior, stopping
