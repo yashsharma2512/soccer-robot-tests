@@ -12,7 +12,7 @@ ball-following code runs automatically.
 | --- | --- |
 | `c` | Recalibrate and save the MPU gyro. Keep the robot still until it finishes; normal running then resumes automatically. |
 | `g` | Calibrate all four boundary sensors over the green/dark field only. There is a 3-second placement window, then 32 readings per sensor. Normal running resumes after `LINE calibration saved` if all sensors are healthy. |
-| `r` | Resume after a manual stop or `LINE_BLOCKED` fault, if the gyro and line sensors are healthy and calibrated. |
+| `r` | Resume after a manual stop, or retry a finished ball search. |
 | `s` | Stop immediately and brake the motors. `x`, `0`, and space also stop. |
 | `b` | Rescan boundary sensors and reload saved calibration. |
 
@@ -52,7 +52,18 @@ calibration no longer matters because this sketch has no white capture.
 
 The robot follows a detected ball while holding its MPU heading. After a
 short lost-ball pause, it searches sideways and forward for at most 1.95 s.
-Boundary escape has priority. The search ends stopped if the ball remains
-unseen, and a later ball sighting resumes following. Send `r` to retry a
-finished search or resume after `s`. The code compiles for Mega 2560; motor direction and boundary
-behavior still need testing on the physical robot.
+Boundary escape has priority. A front sensor commands backward motion; rear
+commands forward; right commands left; left commands right. Corner hits combine
+the two directions. If opposing sides trigger together, the most recently
+triggered side or last unambiguous escape direction is used. If there is no
+direction to choose, the robot brakes in `LINE_HOLD` and reevaluates on the next
+sensor readings; it does not latch a manual-reset fault. A retreat lasting 650 ms
+gets a 120 ms brake before automatically trying again. Once all boundary
+sensors have been clear for 120 ms, normal ball following resumes, or a fresh
+ball search starts after the usual 200 ms lost-ball pause.
+
+The ball search ends stopped if the ball remains unseen; a later ball sighting
+resumes following. Send `r` to retry a finished search or resume after `s`.
+Communication faults, stale boundary data, missing calibration, and MPU faults
+still brake the robot until healthy. The code compiles for Mega 2560; motor
+direction and boundary behavior still need testing on the physical robot.
