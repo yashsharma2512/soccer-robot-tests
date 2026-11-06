@@ -67,18 +67,18 @@ The Mega firmware compiled with Arduino AVR Boards 1.8.6 / AVR GCC
 No upload or hardware test was performed. A saved bias may need stationary
 recalibration when temperature changes; use `c` or the complete `f` procedure.
 
-## Motor wiring and polarity - 5 November 2026
+## Motor wiring and polarity - 6 November 2026
 
-All nine repository sketches now use FL 8/6, FR 9/7, BL 2/3, and BR 10/11.
-The three driving configurations use signs FL +1, FR +1, BL -1, BR +1;
-the sensor diagnostics stop those same eight pins. Wiring tables and inline
-pin maps were updated together, and source audits found no old motor map.
+All ten repository sketches use FL 6/7, FR 4/5, BL 11/10, and BR 2/3.
+The four driving configurations retain signs FL +1, FR +1, BL -1, BR +1;
+sensor diagnostics hold those same eight pins LOW. Wiring tables and inline
+pin maps were updated together, and a source audit found no previous motor map.
 
-All nine sketches compiled for `arduino:avr:mega` with Arduino AVR Boards
-1.8.6 and AVR GCC 7.3.0-atmel3.6.1-arduino7, producing final HEX files.
-The integrated main sketch uses **21,476 bytes flash** and **743 bytes
-static RAM**. No firmware was uploaded and no physical motion was tested.
-The boundary logic is unchanged; its earlier checks are recorded below.
+All ten sketches compiled for `arduino:avr:mega` with Arduino AVR Boards
+1.8.8. The integrated main sketch uses **23,908 bytes flash** and **834 bytes
+static RAM**. Both play-workflow host tests passed with the revised map.
+No firmware was uploaded and no physical motion was tested; verify each
+wheel's direction with the chassis lifted.
 
 ## APDS boundary priority - 5 November 2026
 

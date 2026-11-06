@@ -3,10 +3,10 @@
 // No MPU library, initialization, calibration, or motor movement.
 #include <Wire.h>
 
-const uint8_t FL1 = 8, FL2 = 6;
-const uint8_t FR1 = 9, FR2 = 7;
-const uint8_t BL1 = 2, BL2 = 3;
-const uint8_t BR1 = 10, BR2 = 11;
+const uint8_t FL1 = 6, FL2 = 7;
+const uint8_t FR1 = 4, FR2 = 5;
+const uint8_t BL1 = 11, BL2 = 10;
+const uint8_t BR1 = 2, BR2 = 3;
 const uint8_t MOTOR_PINS[8] = {FL1, FL2, FR1, FR2, BL1, BL2, BR1, BR2};
 
 void printHex(uint8_t value) {

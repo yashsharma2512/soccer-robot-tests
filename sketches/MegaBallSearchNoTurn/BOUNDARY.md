@@ -15,7 +15,7 @@ Open **BoundaryConfig.h**. The supplied positions are examples requested by the 
 
 Edit `CHANNELS` and `SIDES` to match the wiring and physical placement. Side constants also include `line::FRONT_LEFT`, `line::FRONT_RIGHT`, `line::REAR_LEFT`, and `line::REAR_RIGHT`. For example, four corner sensors may use `{line::FRONT_LEFT, line::FRONT_RIGHT, line::REAR_RIGHT, line::REAR_LEFT}`. Incorrect sides produce an incorrect retreat direction. Duplicate/out-of-range channels and invalid side values block initialization.
 
-Keep the existing motor wiring: FL 8/6, FR 9/7, BL 2/3, BR 10/11. APDS power and sensor-side I2C must remain at the appropriate 3.3 V levels, with common ground and the previously checked TCA bus-level arrangement. Each APDS needs its own mux channel. All four configured sensors are required; missing sensors cannot be bypassed by `g`.
+Keep the existing motor wiring: FL 6/7, FR 4/5, BL 11/10, BR 2/3. APDS power and sensor-side I2C must remain at the appropriate 3.3 V levels, with common ground and the previously checked TCA bus-level arrangement. Each APDS needs its own mux channel. All four configured sensors are required; missing sensors cannot be bypassed by `g`.
 
 ## Calibrate before starting
 

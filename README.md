@@ -13,10 +13,10 @@ The integrated movement sketch is `MegaBallSearchNoTurn`. The latest standalone 
 
 | Motor | Input 1 | Input 2 |
 | --- | --- | --- |
-| Front left | D8 | D6 |
-| Front right | D9 | D7 |
-| Back left | D2 | D3 |
-| Back right | D10 | D11 |
+| Front left | D6 | D7 |
+| Front right | D4 | D5 |
+| Back left | D11 | D10 |
+| Back right | D2 | D3 |
 
 Motor polarity: `FL_SIGN=1`, `FR_SIGN=1`, `BL_SIGN=-1`, `BR_SIGN=1`. All movement sketches use these defaults; diagnostic sketches hold the same eight pins LOW.
 

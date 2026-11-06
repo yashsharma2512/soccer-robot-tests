@@ -16,10 +16,10 @@ Select **Arduino Mega or Mega 2560 / ATmega2560**. Open the `.ino` whose name ma
 
 | Wheel | Input 1 | Input 2 |
 | --- | --- | --- |
-| FL | D8 | D6 |
-| FR | D9 | D7 |
-| BL | D2 | D3 |
-| BR | D10 | D11 |
+| FL | D6 | D7 |
+| FR | D4 | D5 |
+| BL | D11 | D10 |
+| BR | D2 | D3 |
 
 Motor-test polarity defaults: `FL_SIGN=1`, `FR_SIGN=1`, `BL_SIGN=-1`, `BR_SIGN=1`.
 

@@ -1,5 +1,5 @@
 // MOTOR-ONLY TEST: Mega 2560 + two MDD3A drivers + four motors.
-// Current pin map: FL 8/6, FR 9/7, BL 2/3, BR 10/11.
+// Current pin map: FL 6/7, FR 4/5, BL 11/10, BR 2/3.
 // Serial Monitor: 115200 baud, Newline. Start with wheels lifted.
 // No IR or MPU code is used. Motors are stopped after every 800 ms pulse.
 #if !defined(__AVR_ATmega2560__)
@@ -8,14 +8,14 @@
 
 // FL = front left, FR = front right, BL = back left, BR = back right.
 // Each MDD3A motor channel has two control inputs, named 1 and 2 here.
-const uint8_t FL1 = 8;
-const uint8_t FL2 = 6;
-const uint8_t FR1 = 9;
-const uint8_t FR2 = 7;
-const uint8_t BL1 = 2;
-const uint8_t BL2 = 3;
-const uint8_t BR1 = 10;
-const uint8_t BR2 = 11;
+const uint8_t FL1 = 6;
+const uint8_t FL2 = 7;
+const uint8_t FR1 = 4;
+const uint8_t FR2 = 5;
+const uint8_t BL1 = 11;
+const uint8_t BL2 = 10;
+const uint8_t BR1 = 2;
+const uint8_t BR2 = 3;
 
 // Change only a reversed motor's sign to -1.
 const int8_t FL_SIGN = 1;

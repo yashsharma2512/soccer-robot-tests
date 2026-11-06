@@ -838,10 +838,10 @@ static_assert(cfg::GYRO_EEPROM_BASE >= boundarycfg::EEPROM_BASE + 30 ||
               "Gyro and line EEPROM records must not overlap");
 
 const uint8_t IR_ADDRESS = 0x08;
-const uint8_t FL1 = 8, FL2 = 6;
-const uint8_t FR1 = 9, FR2 = 7;
-const uint8_t BL1 = 2, BL2 = 3;
-const uint8_t BR1 = 10, BR2 = 11;
+const uint8_t FL1 = 6, FL2 = 7;
+const uint8_t FR1 = 4, FR2 = 5;
+const uint8_t BL1 = 11, BL2 = 10;
+const uint8_t BR1 = 2, BR2 = 3;
 const uint8_t MOTOR_PINS[8] = {FL1, FL2, FR1, FR2, BL1, BL2, BR1, BR2};
 
 const uint16_t IR_POLL_MS = 50;

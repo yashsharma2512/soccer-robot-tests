@@ -7,7 +7,7 @@ const uint8_t TCA_ADDRESS = 0x70; // Change if A0/A1/A2 select 0x71..0x77.
 const uint8_t APDS_ADDRESS = 0x39;
 const uint8_t ATIME_VALUE = 219;  // Approximately 103 ms integration.
 const uint8_t GAIN_VALUE = 1;     // 0=1x, 1=4x, 2=16x, 3=64x.
-const uint8_t MOTOR_PINS[] = {8, 6, 9, 7, 2, 3, 10, 11};
+const uint8_t MOTOR_PINS[] = {6, 7, 4, 5, 11, 10, 2, 3};
 bool present[8] = {};
 bool muxReady = false;
 uint32_t lastReport = 0;

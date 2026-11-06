@@ -28,7 +28,7 @@ match the physical robot before enabling movement.
    A saved gyro offset and line calibration can reload on later boots, but the
    robot still starts stopped and requires `g`.
 
-The motor inputs are FL 8/6, FR 9/7, BL 2/3, BR 10/11. The back-left motor
+The motor inputs are FL 6/7, FR 4/5, BL 11/10, BR 2/3. The back-left motor
 polarity is inverted in software. Mega I2C uses SDA 20 and SCL 21.
 During preparation, capture, manual stop, and boundary faults, both MDD3A
 inputs for each motor are held LOW. The MDD3A datasheet calls LOW/LOW **brake**;

@@ -5,7 +5,7 @@ const uint8_t IR_ADDRESS = 0x08;
 
 // Latest motor pin map: FL, FR, BL, BR.
 // These outputs remain LOW throughout the test.
-const uint8_t MOTOR_PINS[] = {8, 6, 9, 7, 2, 3, 10, 11};
+const uint8_t MOTOR_PINS[] = {6, 7, 4, 5, 11, 10, 2, 3};
 
 void setup() {
   for (uint8_t i = 0; i < sizeof(MOTOR_PINS); ++i) {
