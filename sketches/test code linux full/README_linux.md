@@ -48,7 +48,7 @@ calibration no longer matters because this sketch has no white capture.
 
 - Mega I2C: SDA 20, SCL 21; TCA9548A at `0x70`; four APDS sensors on channels 0–3.
 - HiTechnic IR Seeker V2: `0x08`; MPU: `0x68` or `0x69`.
-- MDD3A motor inputs: FL 8/6, FR 9/7, BL 2/3, BR 10/11. Back-left polarity is inverted in software. LOW/LOW brakes each motor.
+- MDD3A motor inputs: FL 6/7, FR 4/5, BL 11/10, BR 2/3. Back-left polarity is inverted in software. LOW/LOW brakes each motor.
 
 The robot follows a detected ball while holding its MPU heading. After a
 200 ms lost-ball pause, it searches sideways and forward for 1.95 s, pauses
