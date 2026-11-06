@@ -12,10 +12,10 @@ The robot follows the HiTechnic IR ball with MPU heading correction. With no bal
 
 | Wheel | Input 1 | Input 2 |
 | --- | ---: | ---: |
-| FL | 8 | 6 |
-| FR | 9 | 7 |
-| BL | 2 | 3 |
-| BR | 10 | 11 |
+| FL | 6 | 7 |
+| FR | 4 | 5 |
+| BL | 11 | 10 |
+| BR | 2 | 3 |
 
 Motor polarity in `RobotConfig.h`: FL +1, FR +1, **BL -1**, BR +1.
 
