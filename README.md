@@ -2,6 +2,8 @@
 
 For the classic **ESP32-WROOM-32** port, use the separate **[esp32 folder](esp32/README.md)**
 and its **[ESP32 wiring guide](esp32/WIRING.md)**. Its GPIO map differs from the Mega map below.
+The **[ESP32 AP bench dashboard](esp32/ESP32BenchDashboard/README.md)** adds live
+sensor monitoring, saved calibration and explicitly armed motor pulses from a phone.
 
 Arduino Mega 2560 sketches for a four-motor soccer robot with two Cytron MDD3A drivers, a HiTechnic IR Seeker V2, and an MPU-compatible IMU. Open one sketch folder at a time in Arduino IDE; each folder is a separate program.
 

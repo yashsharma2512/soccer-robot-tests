@@ -4,14 +4,16 @@ This folder ports the Linux full sketch to the classic **ESP32 DevKit / ESP32-WR
 It uses the same four-motor mixer, HiTechnic IR following, repeated sideways/forward
 search, MPU heading hold, green-only APDS calibration, and white-line escape priority.
 IR and MPU remain on the **main I2C rails**. Only the four APDS sensors use the TCA.
-No NeoPixels, Wi-Fi, or Bluetooth are used.
+No NeoPixels or Bluetooth are used. The optional bench dashboard uses Wi-Fi AP mode.
 
 | Open this sketch | Purpose |
 | --- | --- |
 | [ESP32HardwareTest](ESP32HardwareTest/ESP32HardwareTest.ino) | Read all sensors; explicitly requested 400 ms motor pulses only |
+| [ESP32BenchDashboard](ESP32BenchDashboard/README.md) | Offline AP webpage, live sensor telemetry, saved calibration, armed motor pulses |
 | [ESP32SoccerFull](ESP32SoccerFull/ESP32SoccerFull.ino) | Full continuous search/follow/escape program, saved calibration |
 
-Each sketch is one self-contained `.ino`; they require only libraries bundled
+The original sketches are self-contained `.ino` files; the bench dashboard's
+four `.h` files must stay beside its `.ino`. All require only libraries bundled
 with **esp32 by Espressif Systems 3.x**. Select **ESP32 Dev Module**, not Arduino
 Nano ESP32, ESP32-C3, or ESP32-S3. Tested compilation uses Espressif core 3.3.12.
 

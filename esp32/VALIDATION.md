@@ -1,5 +1,7 @@
 # ESP32 validation - 7 November 2026
 
+The optional AP bench dashboard has its own **[validation record](ESP32BenchDashboard/VALIDATION.md)**.
+
 Both self-contained sketches compiled for **ESP32 Dev Module**
 (`esp32:esp32:esp32`) with **Espressif Arduino core 3.3.12**.
 
