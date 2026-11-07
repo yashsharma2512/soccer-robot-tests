@@ -150,14 +150,14 @@ The AP password is editable near the top of the sketch. Keep access limited
 to people running the test. Action POSTs require the dashboard's per-boot
 token, preventing an unrelated browser page from issuing a simple form action.
 
-## Later integration into the main program
+## Full-program AP version
 
-AP monitoring can run while the main program follows/searches for the ball
-and gives boundary escape priority. Selecting calibration should first
-suspend driving and disarm motors, then capture/save, and require an explicit
-Resume after fresh calibrated readings return. This bench implements the
-monitoring and stopped-calibration pieces; autonomous integration is the next
-stage after the physical tests pass.
+[ESP32SoccerAP](../ESP32SoccerAP/README.md) adds AP monitoring while the robot
+follows/searches for the ball and gives boundary escape priority. Selecting
+calibration stops driving before capture/save; explicit Resume requires fresh,
+calibrated sensor data. It also provides combined gyro-then-green calibration
+and a motor command watchdog. Verify the hardware with this bench first;
+the new full version still requires physical testing.
 
 See [VALIDATION.md](VALIDATION.md) for the exact checks performed in software.
 

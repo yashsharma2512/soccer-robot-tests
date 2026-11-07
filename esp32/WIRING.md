@@ -1,7 +1,7 @@
 # Classic ESP32-WROOM-32 wiring
 
 Use GPIO numbers printed on the ESP32 board. This map is for classic WROOM-32;
-it is not the Mega pin map. Both sketches in this folder use these connections.
+it is not the Mega pin map. All ESP32 sketches in this folder use these connections.
 
 ## Two MDD3A drivers and four motors
 
