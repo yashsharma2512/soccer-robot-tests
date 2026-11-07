@@ -37,6 +37,7 @@
 #include <ArduinoOTA.h>
 #include <Update.h>
 #include <Adafruit_NeoPixel.h>
+#include <Preferences.h>
 #include <math.h>
 
 // ============================================================
@@ -126,6 +127,38 @@ Motor motorFL = {FL_PWM_A, FL_PWM_B, 1};
 Motor motorFR = {FR_PWM_A, FR_PWM_B, 1};
 Motor motorBL = {BL_PWM_A, BL_PWM_B, -1};
 Motor motorBR = {BR_PWM_A, BR_PWM_B, 1};
+
+// Bit 0 = FL, 1 = FR, 2 = BL, 3 = BR. The original BL polarity is reversed.
+const uint8_t DEFAULT_MOTOR_REVERSE_MASK = 0x04;
+uint8_t motorReverseMask = DEFAULT_MOTOR_REVERSE_MASK;
+
+void applyMotorDirections(uint8_t reverseMask) {
+  motorFL.dirSign = (reverseMask & 0x01) ? -1 : 1;
+  motorFR.dirSign = (reverseMask & 0x02) ? -1 : 1;
+  motorBL.dirSign = (reverseMask & 0x04) ? -1 : 1;
+  motorBR.dirSign = (reverseMask & 0x08) ? -1 : 1;
+  motorReverseMask = reverseMask & 0x0F;
+}
+
+void loadMotorDirections() {
+  Preferences prefs;
+  uint8_t mask = DEFAULT_MOTOR_REVERSE_MASK;
+  if (prefs.begin("og-motors", true)) {
+    mask = prefs.getUChar("reverse", DEFAULT_MOTOR_REVERSE_MASK);
+    prefs.end();
+  }
+  applyMotorDirections(mask);
+}
+
+bool saveMotorDirections(uint8_t reverseMask) {
+  Preferences prefs;
+  if (!prefs.begin("og-motors", false)) return false;
+  size_t written = prefs.putUChar("reverse", reverseMask & 0x0F);
+  prefs.end();
+  if (written != 1) return false;
+  applyMotorDirections(reverseMask);
+  return true;
+}
 
 
 // Forward declarations for globals/functions used by the APDS subsystem.
@@ -1363,6 +1396,8 @@ void handleRoot();
 void handleDebugData();
 void handleControl();
 void handleMotorTest();
+void handleMotorDirectionsRead();
+void handleMotorDirectionsSave();
 void handleMode();
 void handleHeadingReset();
 void handleOTAUpload();
@@ -1389,6 +1424,7 @@ String makeDebugPage() {
             ".controls{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-width:420px;margin:auto}.controls button,.row button{font-size:20px;padding:13px;border:0;border-radius:9px;background:#39434d;color:white}.stop{background:#a83232!important}.auto{background:#286b45!important}.modeManual{background:#a36b20!important}"
             ".row{display:flex;gap:7px;justify-content:center;margin-top:8px}.row button{font-size:15px;padding:10px 13px}.wide{width:100%;box-sizing:border-box}"
             ".motorrow{display:grid;grid-template-columns:40px 1fr 1fr;gap:7px;align-items:center;margin-top:7px}.motorrow button{font-size:16px;padding:12px;border:0;border-radius:9px;background:#39434d;color:white;touch-action:none;user-select:none}"
+            ".motordir{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-top:8px}.motordir select{font-size:16px;padding:8px;background:#39434d;color:white;border:0;border-radius:7px}"
             "input[type=range]{width:100%}.mode{font-size:18px;font-weight:bold}.mono{font-family:monospace}"
             "@media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr)}}"
             "</style></head><body>");
@@ -1463,6 +1499,15 @@ String makeDebugPage() {
   html += F("<div class='row'><button class='stop' onclick='forceStopMotorTest()'>STOP MOTOR</button></div>");
   html += F("<div>Active: <span id='motorStatus'>None</span></div></div>");
 
+  html += F("<div class='card'><b>SAVED MOTOR DIRECTIONS</b><div>Test each wheel above, then set its Forward direction and save.</div>");
+  for (int i = 0; i < 4; i++) {
+    html += F("<div class='motordir'><label for='dir"); html += String(i);
+    html += F("'>"); html += motorNames[i]; html += F("</label><select id='dir"); html += String(i);
+    html += F("' onchange=\"document.getElementById('dirStatus').textContent='Unsaved changes'\"><option value='0'>Normal</option><option value='1'>Reversed</option></select></div>");
+  }
+  html += F("<div class='row'><button onclick='saveDirections()'>SAVE DIRECTIONS</button></div>");
+  html += F("<div id='dirStatus'>Loading saved directions...</div></div>");
+
   html += F("<div class='card'><b>OTA FIRMWARE</b><form method='POST' action='/update' enctype='multipart/form-data'>");
   html += F("<input class='wide' type='file' name='firmware' accept='.bin'><div class='row'><button type='submit'>Upload Firmware</button></div></form>");
   html += F("<small>Arduino IDE: use the Network Port named SoccerMagnumOpus after the first USB upload.</small></div>");
@@ -1477,6 +1522,8 @@ String makeDebugPage() {
              "function forceStopMotorTest(){stopMotorTest();sendMotor(-1,0);}"
              "window.addEventListener('pointerup',stopMotorTest);window.addEventListener('pointercancel',stopMotorTest);window.addEventListener('blur',stopMotorTest);"
              "document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMotorTest()});"
+             "async function loadDirections(){try{let r=await fetch('/motor/directions',{cache:'no-store'});if(!r.ok)throw Error('Load failed');let j=await r.json();for(let i=0;i<4;i++)document.getElementById('dir'+i).value=String((j.mask>>i)&1);document.getElementById('dirStatus').textContent='Saved settings loaded';}catch(e){document.getElementById('dirStatus').textContent='Could not load directions';}}"
+             "async function saveDirections(){forceStopMotorTest();await motorQueue.catch(()=>{});let mask=0;for(let i=0;i<4;i++)mask|=Number(document.getElementById('dir'+i).value)<<i;try{let r=await fetch('/motor/directions?mask='+mask,{method:'POST',cache:'no-store'});if(!r.ok)throw Error(await r.text());document.getElementById('dirStatus').textContent='Saved. Motors stopped; switch to AUTO when ready.';}catch(e){document.getElementById('dirStatus').textContent='Save failed: '+e.message;}}"
              "async function setAPDSTol(v){document.getElementById('aptol').textContent=Number(v).toFixed(2);fetch('/apds/tolerance?v='+v);}"
              "async function setAPDSBright(v){document.getElementById('apbright').textContent=v;fetch('/apds/brightness?v='+v);}"
              "async function updateAPDS(){try{let r=await fetch('/apds',{cache:'no-store'});let j=await r.json();document.getElementById('aptol').textContent=Number(j.tolerance).toFixed(2);document.getElementById('aptolSlider').value=j.tolerance;document.getElementById('apbright').textContent=j.brightness;document.getElementById('apbrightSlider').value=j.brightness;document.getElementById('apmsg').textContent=j.message;for(let i=0;i<4;i++){let a=j.sensors[i];let box=document.getElementById('apbox'+i);let st=document.getElementById('aps'+i);document.getElementById('apr'+i).textContent=a.r;document.getElementById('apg'+i).textContent=a.g;document.getElementById('apb'+i).textContent=a.b;document.getElementById('apc'+i).textContent=a.c;document.getElementById('apd'+i).textContent=Number(a.distance).toFixed(3);document.getElementById('apbr'+i).textContent=Number(a.brightness).toFixed(2);st.textContent=!a.available?'NO DATA':(a.green?'GREEN':'WHITE');box.className='sensor '+(a.green?'ok':'warn');}}catch(e){}}"
@@ -1486,7 +1533,7 @@ String makeDebugPage() {
              " let v=(c==='S')?0:+speed.value;"
              " await fetch('/control?cmd='+c+'&speed='+v);"
              "}"
-             "async function toggleMode(){"
+             "async function toggleMode(){forceStopMotorTest();await motorQueue.catch(()=>{});"
              " let manual=modeBtn.dataset.manual==='1';"
              " await fetch('/mode?set='+(manual?'auto':'manual'));"
              " await update();"
@@ -1514,7 +1561,7 @@ String makeDebugPage() {
              " setModeUI(j.manual);"
              " document.getElementById('ballDot').style.left=(100-(j.position/50))+'%';"
              "}catch(e){}}"
-             "setInterval(update,100);setInterval(updateAPDS,150);update();updateAPDS();"
+             "setInterval(update,100);setInterval(updateAPDS,150);update();updateAPDS();loadDirections();"
              "</script></body></html>");
   return html;
 }
@@ -1593,6 +1640,39 @@ void handleMotorTest() {
     setSelectedMotor(motorTestIndex, motorTestPwm);
   }
   server.send(200, "text/plain", "OK");
+}
+
+void handleMotorDirectionsRead() {
+  server.send(200, "application/json",
+              "{\"mask\":" + String(motorReverseMask) + "}");
+}
+
+void handleMotorDirectionsSave() {
+  if (!server.hasArg("mask")) {
+    server.send(400, "text/plain", "Missing direction mask");
+    return;
+  }
+  String value = server.arg("mask");
+  int mask = value.toInt();
+  if (mask < 0 || mask > 15 || value != String(mask)) {
+    server.send(400, "text/plain", "Direction mask must be 0..15");
+    return;
+  }
+
+  // Prevent the robot moving with a changed polarity until AUTO is selected.
+  manualMode = true;
+  manualVy = manualVx = manualW = 0;
+  motorTestIndex = -1;
+  motorTestPwm = 0;
+  lastManualCommand = millis();
+  stopAll();
+
+  if (!saveMotorDirections(uint8_t(mask))) {
+    server.send(500, "text/plain", "Could not save motor directions");
+    return;
+  }
+  server.send(200, "application/json",
+              "{\"mask\":" + String(motorReverseMask) + "}");
 }
 
 void handleMode() {
@@ -1827,6 +1907,8 @@ void startWiFiServicesIfConnected() {
   server.on("/data", HTTP_GET, handleDebugData);
   server.on("/control", HTTP_GET, handleControl);
   server.on("/motor/test", HTTP_POST, handleMotorTest);
+  server.on("/motor/directions", HTTP_GET, handleMotorDirectionsRead);
+  server.on("/motor/directions", HTTP_POST, handleMotorDirectionsSave);
   server.on("/mode", HTTP_GET, handleMode);
   server.on("/heading/reset", HTTP_GET, handleHeadingReset);
   server.on("/apds", HTTP_GET, handleAPDSPageData);
@@ -1973,6 +2055,7 @@ void setup() {
   pinMode(motorBR.pinB, OUTPUT);
 
   stopAll();
+  loadMotorDirections();
 
   // ----------------------------------------------------------
   // I2C / APDS / MPU
