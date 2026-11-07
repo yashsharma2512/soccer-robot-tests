@@ -69,6 +69,8 @@ int manualW = 0;
 int manualSpeed = 150;
 unsigned long lastManualCommand = 0;
 const unsigned long MANUAL_TIMEOUT = 800;
+int8_t motorTestIndex = -1;  // -1 = normal manual drive, 0..3 = FL/FR/BL/BR.
+int motorTestPwm = 0;
 
 // ------------------------------------------------------------
 // OTA
@@ -1047,6 +1049,13 @@ void stopAll() {
   setMotorSpeed(motorBR, 0);
 }
 
+void setSelectedMotor(int8_t index, int speed) {
+  if (index == 0) setMotorSpeed(motorFL, speed);
+  else if (index == 1) setMotorSpeed(motorFR, speed);
+  else if (index == 2) setMotorSpeed(motorBL, speed);
+  else if (index == 3) setMotorSpeed(motorBR, speed);
+}
+
 // ============================================================
 // OMNI DRIVE
 // ============================================================
@@ -1353,6 +1362,7 @@ void followBall() {
 void handleRoot();
 void handleDebugData();
 void handleControl();
+void handleMotorTest();
 void handleMode();
 void handleHeadingReset();
 void handleOTAUpload();
@@ -1378,6 +1388,7 @@ String makeDebugPage() {
             ".labels{display:flex;justify-content:space-between;color:#aaa;font-size:12px}.big{font-size:20px}.ok{color:#55dd77}.warn{color:#ffcc55}"
             ".controls{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-width:420px;margin:auto}.controls button,.row button{font-size:20px;padding:13px;border:0;border-radius:9px;background:#39434d;color:white}.stop{background:#a83232!important}.auto{background:#286b45!important}.modeManual{background:#a36b20!important}"
             ".row{display:flex;gap:7px;justify-content:center;margin-top:8px}.row button{font-size:15px;padding:10px 13px}.wide{width:100%;box-sizing:border-box}"
+            ".motorrow{display:grid;grid-template-columns:40px 1fr 1fr;gap:7px;align-items:center;margin-top:7px}.motorrow button{font-size:16px;padding:12px;border:0;border-radius:9px;background:#39434d;color:white;touch-action:none;user-select:none}"
             "input[type=range]{width:100%}.mode{font-size:18px;font-weight:bold}.mono{font-family:monospace}"
             "@media(max-width:600px){.grid{grid-template-columns:repeat(2,1fr)}}"
             "</style></head><body>");
@@ -1438,6 +1449,20 @@ String makeDebugPage() {
   html += F("</div><div class='row'><button onmousedown=go('RL') ontouchstart=go('RL')>&#8634; Rotate</button><button onmousedown=go('RR') ontouchstart=go('RR')>Rotate &#8635;</button></div>");
   html += F("<div class='row'><button id='modeBtn' class='auto wide' onclick=toggleMode()>SWITCH TO MANUAL</button></div></div>");
 
+  html += F("<div class='card'><b>INDIVIDUAL MOTOR TEST</b><div>Hold a button to run only that wheel. Release to stop.</div>");
+  html += F("<div>Test PWM: <span id='motorSpd'>100</span></div>");
+  html += F("<input id='motorSpeed' type='range' min='40' max='160' value='100' oninput='motorSpd.textContent=this.value'>");
+  const char* motorNames[4] = {"FL", "FR", "BL", "BR"};
+  for (int i = 0; i < 4; i++) {
+    html += F("<div class='motorrow'><b>"); html += motorNames[i]; html += F("</b>");
+    html += F("<button onpointerdown=\"startMotorTest(event,"); html += String(i);
+    html += F(",1)\" onpointerleave=\"stopMotorTest(event)\">Forward</button>");
+    html += F("<button onpointerdown=\"startMotorTest(event,"); html += String(i);
+    html += F(",-1)\" onpointerleave=\"stopMotorTest(event)\">Reverse</button></div>");
+  }
+  html += F("<div class='row'><button class='stop' onclick='forceStopMotorTest()'>STOP MOTOR</button></div>");
+  html += F("<div>Active: <span id='motorStatus'>None</span></div></div>");
+
   html += F("<div class='card'><b>OTA FIRMWARE</b><form method='POST' action='/update' enctype='multipart/form-data'>");
   html += F("<input class='wide' type='file' name='firmware' accept='.bin'><div class='row'><button type='submit'>Upload Firmware</button></div></form>");
   html += F("<small>Arduino IDE: use the Network Port named SoccerMagnumOpus after the first USB upload.</small></div>");
@@ -1445,6 +1470,13 @@ String makeDebugPage() {
   html += F("<script>"
              "const speed=document.getElementById('speed'),spd=document.getElementById('spd');"
              "const modeBtn=document.getElementById('modeBtn');"
+             "let motorTimer=0,motorHolding=false,motorQueue=Promise.resolve();"
+             "function sendMotor(i,v){motorQueue=motorQueue.catch(()=>{}).then(()=>fetch('/motor/test?motor='+i+'&speed='+v,{method:'POST',cache:'no-store'}));}"
+             "function startMotorTest(e,i,sign){e.preventDefault();if(motorHolding)stopMotorTest();motorHolding=true;const v=sign*Number(document.getElementById('motorSpeed').value);sendMotor(i,v);motorTimer=setInterval(()=>{if(motorHolding)sendMotor(i,v)},250);}"
+             "function stopMotorTest(e){if(e)e.preventDefault();if(!motorHolding)return;motorHolding=false;clearInterval(motorTimer);sendMotor(-1,0);}"
+             "function forceStopMotorTest(){stopMotorTest();sendMotor(-1,0);}"
+             "window.addEventListener('pointerup',stopMotorTest);window.addEventListener('pointercancel',stopMotorTest);window.addEventListener('blur',stopMotorTest);"
+             "document.addEventListener('visibilitychange',()=>{if(document.hidden)stopMotorTest()});"
              "async function setAPDSTol(v){document.getElementById('aptol').textContent=Number(v).toFixed(2);fetch('/apds/tolerance?v='+v);}"
              "async function setAPDSBright(v){document.getElementById('apbright').textContent=v;fetch('/apds/brightness?v='+v);}"
              "async function updateAPDS(){try{let r=await fetch('/apds',{cache:'no-store'});let j=await r.json();document.getElementById('aptol').textContent=Number(j.tolerance).toFixed(2);document.getElementById('aptolSlider').value=j.tolerance;document.getElementById('apbright').textContent=j.brightness;document.getElementById('apbrightSlider').value=j.brightness;document.getElementById('apmsg').textContent=j.message;for(let i=0;i<4;i++){let a=j.sensors[i];let box=document.getElementById('apbox'+i);let st=document.getElementById('aps'+i);document.getElementById('apr'+i).textContent=a.r;document.getElementById('apg'+i).textContent=a.g;document.getElementById('apb'+i).textContent=a.b;document.getElementById('apc'+i).textContent=a.c;document.getElementById('apd'+i).textContent=Number(a.distance).toFixed(3);document.getElementById('apbr'+i).textContent=Number(a.brightness).toFixed(2);st.textContent=!a.available?'NO DATA':(a.green?'GREEN':'WHITE');box.className='sensor '+(a.green?'ok':'warn');}}catch(e){}}"
@@ -1478,6 +1510,7 @@ String makeDebugPage() {
              " document.getElementById('target').textContent=j.target.toFixed(2);"
              " document.getElementById('mode').textContent=j.manual?'MANUAL':'AUTO';"
              " document.getElementById('mode').className=j.manual?'warn':'ok';"
+             " document.getElementById('motorStatus').textContent=j.motorTest<0?'None':(['FL','FR','BL','BR'][j.motorTest]+' '+(j.motorPwm>0?'Forward ':'Reverse ')+Math.abs(j.motorPwm));"
              " setModeUI(j.manual);"
              " document.getElementById('ballDot').style.left=(100-(j.position/50))+'%';"
              "}catch(e){}}"
@@ -1499,6 +1532,8 @@ void handleDebugData() {
   json += ",\"yaw\":"+String(currentYaw,2);
   json += ",\"target\":"+String(targetYaw,2);
   json += ",\"manual\":"; json += manualMode?"true":"false";
+  json += ",\"motorTest\":"+String(motorTestIndex);
+  json += ",\"motorPwm\":"+String(motorTestPwm);
   json += "}";
   server.send(200,"application/json",json);
 }
@@ -1508,6 +1543,7 @@ void handleControl() {
   int spd=server.hasArg("speed") ? server.arg("speed").toInt() : manualSpeed;
   spd=constrain(spd,0,255); manualSpeed=spd;
   manualMode=true; lastManualCommand=millis();
+  motorTestIndex=-1; motorTestPwm=0;
   manualVy=manualVx=manualW=0;
   if(cmd=="F") manualVy=spd;
   else if(cmd=="B") manualVy=-spd;
@@ -1520,10 +1556,49 @@ void handleControl() {
   server.send(200,"text/plain","OK");
 }
 
+void handleMotorTest() {
+  if (!server.hasArg("motor") || !server.hasArg("speed")) {
+    server.send(400, "text/plain", "motor and speed are required");
+    return;
+  }
+
+  String motor = server.arg("motor");
+  int speed = server.arg("speed").toInt();
+  if (motor == "-1" && speed == 0) {
+    manualMode = true;
+    manualVy = manualVx = manualW = 0;
+    motorTestIndex = -1;
+    motorTestPwm = 0;
+    lastManualCommand = millis();
+    stopAll();
+    server.send(200, "text/plain", "Stopped");
+    return;
+  }
+
+  if ((motor != "0" && motor != "1" && motor != "2" && motor != "3") ||
+      speed == 0) {
+    server.send(400, "text/plain", "Choose motor 0..3 and a nonzero speed");
+    return;
+  }
+
+  int8_t index = motor.toInt();
+  speed = constrain(speed, -160, 160);
+  manualMode = true;
+  manualVy = manualVx = manualW = 0;
+  lastManualCommand = millis();
+  if (motorTestIndex != index || motorTestPwm != speed) {
+    stopAll();
+    motorTestIndex = index;
+    motorTestPwm = speed;
+    setSelectedMotor(motorTestIndex, motorTestPwm);
+  }
+  server.send(200, "text/plain", "OK");
+}
+
 void handleMode() {
   String set=server.arg("set");
-  if(set=="auto") { manualMode=false; manualVy=manualVx=manualW=0; stopAll(); }
-  else if(set=="manual") { manualMode=true; lastManualCommand=millis(); }
+  if(set=="auto") { manualMode=false; manualVy=manualVx=manualW=0; motorTestIndex=-1; motorTestPwm=0; stopAll(); }
+  else if(set=="manual") { manualMode=true; manualVy=manualVx=manualW=0; motorTestIndex=-1; motorTestPwm=0; lastManualCommand=millis(); stopAll(); }
   server.send(200,"text/plain",manualMode?"MANUAL":"AUTO");
 }
 
@@ -1545,6 +1620,7 @@ void handleOTAUpload() {
   if(upload.status==UPLOAD_FILE_START) {
     Serial.printf("OTA upload: %s\n",upload.filename.c_str());
     stopAll();
+    motorTestIndex=-1; motorTestPwm=0;
     manualMode=false;
     if(!Update.begin(UPDATE_SIZE_UNKNOWN)) Update.printError(Serial);
   } else if(upload.status==UPLOAD_FILE_WRITE) {
@@ -1564,6 +1640,8 @@ void handleAPDSCalibrate() {
   manualVy = 0;
   manualVx = 0;
   manualW  = 0;
+  motorTestIndex = -1;
+  motorTestPwm = 0;
   stopAll();
 
   calibrateAPDSGreen();
@@ -1748,6 +1826,7 @@ void startWiFiServicesIfConnected() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/data", HTTP_GET, handleDebugData);
   server.on("/control", HTTP_GET, handleControl);
+  server.on("/motor/test", HTTP_POST, handleMotorTest);
   server.on("/mode", HTTP_GET, handleMode);
   server.on("/heading/reset", HTTP_GET, handleHeadingReset);
   server.on("/apds", HTTP_GET, handleAPDSPageData);
@@ -1799,13 +1878,16 @@ void serviceWiFi() {
 
     // Manual control timeout is independent safety logic.
     if (manualMode &&
+        (motorTestIndex >= 0 || manualVy != 0 || manualVx != 0 || manualW != 0) &&
         millis() - lastManualCommand > MANUAL_TIMEOUT) {
 
       manualVy = 0;
       manualVx = 0;
       manualW  = 0;
+      motorTestIndex = -1;
+      motorTestPwm = 0;
 
-      drive(0, 0, 0);
+      stopAll();
 
       // Stop the motors, but KEEP MANUAL MODE selected.
       // AUTO must only be selected explicitly by the user.
@@ -1828,13 +1910,16 @@ void serviceWiFi() {
     ArduinoOTA.handle();
 
     if (manualMode &&
+        (motorTestIndex >= 0 || manualVy != 0 || manualVx != 0 || manualW != 0) &&
         millis() - lastManualCommand > MANUAL_TIMEOUT) {
 
       manualVy = 0;
       manualVx = 0;
       manualW  = 0;
+      motorTestIndex = -1;
+      motorTestPwm = 0;
 
-      drive(0, 0, 0);
+      stopAll();
 
       // Stop the motors, but KEEP MANUAL MODE selected.
       // AUTO must only be selected explicitly by the user.
@@ -2111,13 +2196,18 @@ void loop() {
   if (manualMode) {
 
     if (millis() - lastManualCommand <= MANUAL_TIMEOUT) {
-      drive(manualVy, manualVx, manualW);
+      if (motorTestIndex >= 0)
+        setSelectedMotor(motorTestIndex, motorTestPwm);
+      else
+        drive(manualVy, manualVx, manualW);
     }
     else {
 
       manualVy = 0;
       manualVx = 0;
       manualW  = 0;
+      motorTestIndex = -1;
+      motorTestPwm = 0;
 
       stopAll();
 
