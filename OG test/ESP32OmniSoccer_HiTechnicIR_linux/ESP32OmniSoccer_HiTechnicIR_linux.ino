@@ -15,10 +15,9 @@
     Direction 1 = left, 5 = ahead, 9 = right, 0 = no ball.
 
   SEARCH:
-    - Backward first for 3 seconds
-    - Then large sideways search
-    - Then opposite side
-    - Then forward
+    - Sideways toward the last seen ball direction
+    - Sweep the other side, stepping forward between passes
+    - Repeat without turning or reversing toward the own goal
 
   I2C:
     SDA = GPIO21
@@ -765,14 +764,12 @@ const int CENTER_DEADZONE = 250;
 
 const int SEARCH_SIDE_SPEED = 125;
 const int SEARCH_FORWARD_SPEED = 110;
-const int SEARCH_BACKWARD_SPEED = 120;
 
-// Search timings
-
-const unsigned long BACKWARD_SEARCH_TIME = 3000;
-const unsigned long SIDE_SEARCH_TIME = 1500;
-const unsigned long OPPOSITE_SEARCH_TIME = 1800;
-const unsigned long FORWARD_SEARCH_TIME = 1500;
+// Side, forward, double-side, forward, side: one sideways sweep.
+const unsigned long SIDE_SEARCH_TIME = 650;
+const unsigned long FORWARD_SEARCH_TIME = 600;
+const unsigned long SEARCH_CYCLE_TIME =
+  4UL * SIDE_SEARCH_TIME + 2UL * FORWARD_SEARCH_TIME;
 
 // ============================================================
 // SEARCH STATE
@@ -1225,153 +1222,34 @@ int calculateBallStrafe(
 // ============================================================
 
 void searchForBall() {
+  // followBall() already checked the IR sensor this loop. Search keeps
+  // translating and checks for the ball again on the next loop.
+  unsigned long elapsed =
+    (millis() - ballLostTime) % SEARCH_CYCLE_TIME;
 
-  unsigned long lostFor =
-    millis() - ballLostTime;
+  // The old position scale is reversed: >2500 means the ball was left.
+  int side = (lastPosition > 2500) ? -1 : 1;
+  int vy = 0;
+  int vx = 0;
 
-  int position = 2500;
-
-  bool ballWasLeft =
-    lastPosition > 2500;
-
-  // ----------------------------------------------------------
-  // STAGE 1 - LONG BACKWARD SEARCH
-  // ----------------------------------------------------------
-
-  if (
-    lostFor <
-    BACKWARD_SEARCH_TIME
-  ) {
-
-    if (
-      readBall(position)
-    ) {
-      return;
-    }
-
-    driveWithGyro(
-      -SEARCH_BACKWARD_SPEED,
-      0
-    );
-
-    return;
+  if (elapsed < SIDE_SEARCH_TIME) {
+    // First pass toward the ball's last known side.
+    vx = side * SEARCH_SIDE_SPEED;
+  } else if (elapsed < SIDE_SEARCH_TIME + FORWARD_SEARCH_TIME) {
+    vy = SEARCH_FORWARD_SPEED;
+  } else if (elapsed < 3UL * SIDE_SEARCH_TIME + FORWARD_SEARCH_TIME) {
+    // Cross the full width in the other direction.
+    vx = -side * SEARCH_SIDE_SPEED;
+  } else if (elapsed < 3UL * SIDE_SEARCH_TIME + 2UL * FORWARD_SEARCH_TIME) {
+    vy = SEARCH_FORWARD_SPEED;
+  } else {
+    // Return sideways to the starting lane before the next sweep.
+    vx = side * SEARCH_SIDE_SPEED;
   }
 
-  // ----------------------------------------------------------
-  // STAGE 2 - SIDE SEARCH
-  // ----------------------------------------------------------
-
-  unsigned long sideStart =
-    BACKWARD_SEARCH_TIME;
-
-  if (
-    lostFor <
-    sideStart +
-    SIDE_SEARCH_TIME
-  ) {
-
-    if (
-      readBall(position)
-    ) {
-      return;
-    }
-
-    int vx;
-
-    if (ballWasLeft) {
-
-      vx =
-        -SEARCH_SIDE_SPEED;
-    }
-
-    else {
-
-      vx =
-        SEARCH_SIDE_SPEED;
-    }
-
-    driveWithGyro(
-      0,
-      vx
-    );
-
-    return;
-  }
-
-  // ----------------------------------------------------------
-  // STAGE 3 - OPPOSITE SIDE
-  // ----------------------------------------------------------
-
-  unsigned long oppositeStart =
-    sideStart +
-    SIDE_SEARCH_TIME;
-
-  if (
-    lostFor <
-    oppositeStart +
-    OPPOSITE_SEARCH_TIME
-  ) {
-
-    if (
-      readBall(position)
-    ) {
-      return;
-    }
-
-    int vx;
-
-    if (ballWasLeft) {
-
-      vx =
-        SEARCH_SIDE_SPEED;
-    }
-
-    else {
-
-      vx =
-        -SEARCH_SIDE_SPEED;
-    }
-
-    driveWithGyro(
-      0,
-      vx
-    );
-
-    return;
-  }
-
-  // ----------------------------------------------------------
-  // STAGE 4 - FORWARD
-  // ----------------------------------------------------------
-
-  unsigned long forwardStart =
-    oppositeStart +
-    OPPOSITE_SEARCH_TIME;
-
-  if (
-    lostFor <
-    forwardStart +
-    FORWARD_SEARCH_TIME
-  ) {
-
-    if (
-      readBall(position)
-    ) {
-      return;
-    }
-
-    driveWithGyro(
-      SEARCH_FORWARD_SPEED,
-      0
-    );
-
-    return;
-  }
-
-  // Restart
-
-  ballLostTime =
-    millis();
+  debugVX = vx;
+  debugVY = vy;
+  driveWithGyro(vy, vx);
 }
 
 // ============================================================
@@ -1397,9 +1275,6 @@ void followBall() {
   debugBallPosition = position;
 
   if (!ballDetected) {
-
-    debugVX = 0;
-    debugVY = 0;
 
     if (ballWasVisible) {
 
@@ -2209,7 +2084,7 @@ void setup() {
   );
 
   Serial.println(
-    "Backward search = 120"
+    "Search = sideways sweep with forward steps"
   );
 
   Serial.println(
