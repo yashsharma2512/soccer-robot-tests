@@ -772,6 +772,7 @@ int debugBallPosition = 2500;
 int debugVX = 0;
 int debugVY = 0;
 bool debugBallDetected = false;
+uint16_t debugBallStrength = 0;
 
 // ============================================================
 // BALL DETECTION
@@ -1201,6 +1202,7 @@ bool readBall(
     else
       strength = (uint16_t(data[index - 1]) + data[index]) / 2;
   }
+  debugBallStrength = strength;
 
   if (direction == 0 || strength < BALL_THRESHOLD) {
     debugBallDetected = false;
@@ -1420,6 +1422,7 @@ String makeDebugPage() {
             ".grid{display:grid;grid-template-columns:repeat(3,1fr);gap:7px}.sensor{background:#272e36;padding:10px;border-radius:9px;text-align:center}"
             ".name{color:#aaa;font-size:13px}.raw{font-size:23px;font-weight:bold}.smooth{font-size:15px;color:#bbb}.bar{height:11px;background:#444;border-radius:6px;margin-top:7px;overflow:hidden}.fill{height:100%;background:#52c878;width:0%}"
             ".balltrack{position:relative;height:42px;background:#303740;border-radius:21px;margin:13px 4px}.ball{position:absolute;top:7px;width:28px;height:28px;border-radius:50%;background:#ff9f1c;transform:translateX(-50%);transition:left .08s}"
+            ".irring{position:relative;width:210px;height:210px;border:2px solid #52606b;border-radius:50%;margin:12px auto}.irsector{position:absolute;width:27px;height:27px;border-radius:50%;background:#36414b;color:#ddd;display:flex;align-items:center;justify-content:center;transform:translate(-50%,-50%);font-weight:bold}.irsector.active{background:#ff9f1c;color:#171717;box-shadow:0 0 17px #ff9f1c}.irrobot{position:absolute;left:50%;top:53%;transform:translate(-50%,-50%);text-align:center;font-size:29px;color:#55dd77}.irrobot small{display:block;font-size:11px}"
             ".labels{display:flex;justify-content:space-between;color:#aaa;font-size:12px}.big{font-size:20px}.ok{color:#55dd77}.warn{color:#ffcc55}"
             ".controls{display:grid;grid-template-columns:repeat(3,1fr);gap:7px;max-width:420px;margin:auto}.controls button,.row button{font-size:20px;padding:13px;border:0;border-radius:9px;background:#39434d;color:white}.stop{background:#a83232!important}.auto{background:#286b45!important}.modeManual{background:#a36b20!important}"
             ".row{display:flex;gap:7px;justify-content:center;margin-top:8px}.row button{font-size:15px;padding:10px 13px}.wide{width:100%;box-sizing:border-box}"
@@ -1446,7 +1449,9 @@ String makeDebugPage() {
   }
   html += F("</div></div>");
 
-  html += F("<div class='card'><b>BALL POSITION</b><div class='labels'><span>DIR 1 LEFT</span><span>DIR 5 CENTER</span><span>DIR 9 RIGHT</span></div>");
+  html += F("<div class='card'><b>BALL POSITION — IR FRONT ARC</b><div class='irring' id='irRing'><div class='irrobot'>&#9650;<small>ROBOT FRONT</small></div></div>");
+  html += F("<div class='labels'><span>DIR 1 LEFT</span><span>DIR 5 FRONT</span><span>DIR 9 RIGHT</span></div>");
+  html += F("<div class='big'>IR direction: <span id='irDir'>0</span> &nbsp; Strength: <span id='irStrength'>0</span></div>");
   html += F("<div class='balltrack'><div class='ball' id='ballDot' style='left:50%'></div></div>");
   html += F("<div class='big'>Detected: <span id='ball'>NO</span> &nbsp; Position: <span id='pos'>2500</span></div></div>");
 
@@ -1515,6 +1520,7 @@ String makeDebugPage() {
   html += F("<script>"
              "const speed=document.getElementById('speed'),spd=document.getElementById('spd');"
              "const modeBtn=document.getElementById('modeBtn');"
+             "for(let d=1;d<=9;d++){let a=Math.PI-(d-1)*Math.PI/8;let dot=document.createElement('div');dot.id='ir'+d;dot.className='irsector';dot.style.left=(50+42*Math.cos(a))+'%';dot.style.top=(50-42*Math.sin(a))+'%';dot.textContent=d;document.getElementById('irRing').appendChild(dot);}"
              "let motorTimer=0,motorHolding=false,motorQueue=Promise.resolve();"
              "function sendMotor(i,v){motorQueue=motorQueue.catch(()=>{}).then(()=>fetch('/motor/test?motor='+i+'&speed='+v,{method:'POST',cache:'no-store'}));}"
              "function startMotorTest(e,i,sign){e.preventDefault();if(motorHolding)stopMotorTest();motorHolding=true;const v=sign*Number(document.getElementById('motorSpeed').value);sendMotor(i,v);motorTimer=setInterval(()=>{if(motorHolding)sendMotor(i,v)},250);}"
@@ -1552,6 +1558,9 @@ String makeDebugPage() {
              " }"
              " document.getElementById('ball').textContent=j.ball?'DETECTED':'NO';"
              " document.getElementById('ball').className=j.ball?'ok':'warn';"
+             " document.getElementById('irDir').textContent=j.raw[0];"
+             " document.getElementById('irStrength').textContent=j.strength;"
+             " for(let d=1;d<=9;d++)document.getElementById('ir'+d).classList.toggle('active',j.ball&&j.raw[0]===d);"
              " document.getElementById('pos').textContent=j.position;"
              " document.getElementById('yaw').textContent=j.yaw.toFixed(2);"
              " document.getElementById('target').textContent=j.target.toFixed(2);"
@@ -1575,6 +1584,7 @@ void handleDebugData() {
   json += "],\"smooth\":[";
   for(int i=0;i<6;i++){json+=String((int)smooth[i]);if(i<5)json+=",";}
   json += "],\"ball\":"; json += debugBallDetected?"true":"false";
+  json += ",\"strength\":"+String(debugBallStrength);
   json += ",\"position\":"+String(debugBallPosition);
   json += ",\"yaw\":"+String(currentYaw,2);
   json += ",\"target\":"+String(targetYaw,2);
