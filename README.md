@@ -7,7 +7,7 @@ Choose the sketch for your controller:
 
 Both versions need the **Adafruit NeoPixel** library. Wire and each board's storage library come with its Arduino core.
 
-The robot starts playing automatically after startup calibration. Opening the dashboard is not required. If you save motor directions or run a manual motor test, select **AUTO** in the dashboard to resume immediately. A reboot starts in AUTO using the saved motor directions.
+Both sketches start playing automatically after startup calibration. The ESP32 does not require its dashboard to be open. After a manual motor test or direction change, select **AUTO** in the ESP32 dashboard or send `a` to the Mega through Serial. A reboot starts in AUTO using that board's saved motor directions.
 
 ## ESP32 wiring
 
