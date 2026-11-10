@@ -18,7 +18,7 @@ Both sketches start playing automatically after startup calibration. The ESP32 d
 | Back left (BL) | GPIO32 | GPIO33 | Reversed |
 | Back right (BR) | GPIO18 | GPIO19 | Normal |
 
-The HiTechnic IR Seeker V2 uses I²C address `0x08` in AC mode. ESP32 SDA is GPIO21 and SCL is GPIO22. The sketch also uses an MPU6050 at `0x68`, a TCA9548A at `0x70` for the four APDS line sensors, and a 16-LED NeoPixel strip on GPIO15. [Mega pin map and Serial commands](OG%20test%20Mega/README.md).
+The HiTechnic IR Seeker V2 uses I²C address `0x08` in AC mode. ESP32 SDA is GPIO21 and SCL is GPIO22. The sketch also uses an MPU6050 at `0x68`, a TCA9548A at `0x70` for the four APDS line sensors, and a 16-LED NeoPixel strip on GPIO15. APDS channels are **front 3, left 2, back 1, right 0** on both boards. [Mega pin map and Serial commands](OG%20test%20Mega/README.md).
 
 ## Dashboard
 

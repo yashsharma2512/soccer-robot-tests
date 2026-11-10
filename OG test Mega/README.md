@@ -13,7 +13,7 @@ This port keeps the ESP32 sketch's HiTechnic IR ball following, sideways and for
 | Back left | D11 | D10 | Reversed |
 | Back right | D2 | D3 | Normal |
 
-Mega I²C is SDA D20 and SCL D21. The HiTechnic IR Seeker V2 is at `0x08` (AC mode), the MPU at `0x68`, and the TCA9548A at `0x70` with four APDS sensors on channels 0–3. The 16-LED NeoPixel strip uses D15 in this port; move that connection from the ESP32 pin if needed.
+Mega I²C is SDA D20 and SCL D21. The HiTechnic IR Seeker V2 is at `0x08` (AC mode), the MPU at `0x68`, and the TCA9548A at `0x70`. APDS channels are **front 3, left 2, back 1, right 0**. The 16-LED NeoPixel strip uses D15 in this port; move that connection from the ESP32 pin if needed.
 
 ## Optional Serial commands
 

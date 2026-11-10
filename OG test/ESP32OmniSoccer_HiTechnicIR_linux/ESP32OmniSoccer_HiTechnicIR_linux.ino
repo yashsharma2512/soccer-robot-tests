@@ -176,10 +176,10 @@ void driveWithGyro(int vy, int vx);
 // used instead of the Adafruit APDS9960 library's strict ID check.
 //
 // TCA channels:
-//   CH0 = FRONT
-//   CH1 = LEFT
-//   CH2 = BACK
-//   CH3 = RIGHT
+//   CH3 = FRONT
+//   CH2 = LEFT
+//   CH1 = BACK
+//   CH0 = RIGHT
 //
 // NeoPixels:
 //   GPIO15, 16 LEDs, bright WHITE for ground illumination.
@@ -188,10 +188,10 @@ void driveWithGyro(int vy, int vx);
 #define TCA_ADDR           0x70
 #define APDS_ADDR          0x39
 
-#define APDS_CH_FRONT      0
-#define APDS_CH_LEFT       1
-#define APDS_CH_BACK       2
-#define APDS_CH_RIGHT      3
+#define APDS_CH_FRONT      3
+#define APDS_CH_LEFT       2
+#define APDS_CH_BACK       1
+#define APDS_CH_RIGHT      0
 
 #define APDS_ID_REG        0x92
 #define APDS_ENABLE_REG    0x80
@@ -2250,7 +2250,7 @@ void setup() {
   );
 
   Serial.println(
-    "APDS CH0 FRONT / CH1 LEFT / CH2 BACK / CH3 RIGHT"
+    "APDS CH3 FRONT / CH2 LEFT / CH1 BACK / CH0 RIGHT"
   );
 
   Serial.println(
