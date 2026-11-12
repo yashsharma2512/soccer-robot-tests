@@ -4,10 +4,11 @@ Choose the sketch for your controller:
 
 - [ESP32 OG test](OG%20test/ESP32OmniSoccer_HiTechnicIR_linux/ESP32OmniSoccer_HiTechnicIR_linux.ino): open its folder in Arduino IDE and select **ESP32 Dev Module**.
 - [Arduino Mega OG test](OG%20test%20Mega/README.md): open `MegaOGTest/MegaOGTest.ino` and select **Arduino Mega or Mega 2560**. This version has no Wi-Fi, dashboard, or OTA.
+- [Arduino Mega TCS34725 soccer](TCS%20Soccer/README.md) uses four TCS34725 sensors through the TCA9548A for line detection.
 
-Both versions need the **Adafruit NeoPixel** library. Wire and each board's storage library come with its Arduino core.
+The sketches need the **Adafruit NeoPixel** library. Wire and each board's storage library come with its Arduino core.
 
-Both sketches start playing automatically after startup calibration. The ESP32 does not require its dashboard to be open. After a manual motor test or direction change, select **AUTO** in the ESP32 dashboard or send `a` to the Mega through Serial. A reboot starts in AUTO using that board's saved motor directions.
+The sketches start playing automatically after startup calibration. The ESP32 does not require its dashboard to be open. After a manual motor test or direction change, select **AUTO** in the ESP32 dashboard or send `a` to the Mega through Serial. A reboot starts in AUTO using that board's saved motor directions.
 
 ## ESP32 wiring
 
