@@ -124,12 +124,14 @@ constexpr uint32_t TCS_FULL_SCALE = (256UL - TCS_ATIME) * 1024UL;
 constexpr uint16_t TCS_SATURATION = TCS_FULL_SCALE < 65535UL ? TCS_FULL_SCALE : 65535UL;
 constexpr unsigned long TCS_POLL_INTERVAL_US = 2500;
 constexpr unsigned long TCS_MAX_AGE_MS = 60;
-constexpr float TCS_GREEN_TOLERANCE = 0.08f;
+// Smaller distance catches tape whose colour is closer to the green reference.
+constexpr float TCS_GREEN_TOLERANCE = 0.05f;
 constexpr float TCS_MIN_BRIGHTNESS_RATIO = 0.30f;
-constexpr float TCS_MAX_BRIGHTNESS_RATIO = 3.00f;
+// Bright tape is a line even if its normalized RGB looks similar to green.
+constexpr float TCS_WHITE_BRIGHTNESS_RATIO = 1.50f;
 constexpr int LINE_ESCAPE_SPEED = 165;
 
-const uint8_t tcsChannels[] = {3, 2, 1, 0};
+const uint8_t tcsChannels[] = {0, 1, 3, 2};
 const char *const tcsNames[] = {"FRONT", "LEFT", "BACK", "RIGHT"};
 constexpr uint8_t tcsCount = sizeof(tcsChannels);
 Adafruit_NeoPixel tcsPixels(16, 15, NEO_GRB + NEO_KHZ800);
@@ -241,21 +243,24 @@ bool tcsSaturated(const TcsColor &color) {
          color.green >= TCS_SATURATION || color.blue >= TCS_SATURATION;
 }
 
-bool tcsMatchesGreen(uint8_t sensor, const TcsColor &color) {
-  if (color.clear == 0 || tcsSaturated(color)) return false;
-  const GreenReference &reference = tcsGreen[sensor];
-  const float brightnessRatio = color.clear / reference.clear;
-  if (brightnessRatio < TCS_MIN_BRIGHTNESS_RATIO || brightnessRatio > TCS_MAX_BRIGHTNESS_RATIO) {
-    return false;
-  }
+float tcsGreenDistanceSquared(uint8_t sensor, const TcsColor &color) {
   const float total = float(color.red) + color.green + color.blue;
-  if (total == 0) return false;
+  if (total == 0) return 1.0f;
+  const GreenReference &reference = tcsGreen[sensor];
   const float redDifference = color.red / total - reference.red;
   const float greenDifference = color.green / total - reference.green;
   const float blueDifference = color.blue / total - reference.blue;
-  const float distanceSquared = redDifference * redDifference + greenDifference * greenDifference +
-                                blueDifference * blueDifference;
-  return distanceSquared <= TCS_GREEN_TOLERANCE * TCS_GREEN_TOLERANCE;
+  return redDifference * redDifference + greenDifference * greenDifference +
+         blueDifference * blueDifference;
+}
+
+bool tcsMatchesGreen(uint8_t sensor, const TcsColor &color) {
+  if (color.clear == 0 || tcsSaturated(color)) return false;
+  const float brightnessRatio = color.clear / tcsGreen[sensor].clear;
+  if (brightnessRatio < TCS_MIN_BRIGHTNESS_RATIO ||
+      brightnessRatio >= TCS_WHITE_BRIGHTNESS_RATIO) return false;
+  return tcsGreenDistanceSquared(sensor, color) <=
+         TCS_GREEN_TOLERANCE * TCS_GREEN_TOLERANCE;
 }
 
 void serviceTCS() {
@@ -344,6 +349,11 @@ void printTcsReadings() {
     if (!tcsCalibrationComplete) {
       Serial.println(F(" UNCALIBRATED"));
     } else {
+      Serial.print(F(" C/green="));
+      Serial.print(reading.color.clear / tcsGreen[i].clear, 2);
+      Serial.print(F(" distance="));
+      Serial.print(sqrtf(tcsGreenDistanceSquared(i, reading.color)), 3);
+      if (tcsSaturated(reading.color)) Serial.print(F(" SATURATED"));
       Serial.println(reading.white ? F(" LINE") : F(" GREEN"));
     }
   }
@@ -1286,7 +1296,7 @@ void setup() {
   );
 
   Serial.println(
-    "TCS CH3 FRONT / CH2 LEFT / CH1 BACK / CH0 RIGHT"
+    "TCS CH0 FRONT / CH1 LEFT / CH3 BACK / CH2 RIGHT"
   );
 
   Serial.println(
