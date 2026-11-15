@@ -454,6 +454,8 @@ uint8_t irLastReceived = 0;
 uint8_t irLastDirection = 0;
 uint16_t irLastStrength = 0;
 bool irLastTimeout = false;
+uint16_t lineEscapeEvents = 0;
+uint16_t tcsWaitEvents = 0;
 
 // ============================================================
 // SENSOR SMOOTHING
@@ -969,7 +971,13 @@ void reportIrState(const __FlashStringHelper *state) {
   Serial.print(F(" vx="));
   Serial.print(debugVX);
   Serial.print(F(" vy="));
-  Serial.println(debugVY);
+  Serial.print(debugVY);
+  Serial.print(F(" lineEvents="));
+  Serial.print(lineEscapeEvents);
+  Serial.print(F(" tcsWaitEvents="));
+  Serial.println(tcsWaitEvents);
+  lineEscapeEvents = 0;
+  tcsWaitEvents = 0;
 }
 
 // ============================================================
@@ -1029,11 +1037,13 @@ void followBall() {
   debugBallPosition = position;
 
   if (!tcsReady) {
+    if (tcsWaitEvents < 65535) ++tcsWaitEvents;
     reportIrState(F("TCS_WAIT"));
     return;
   }
 
   if (lineEscape) {
+    if (lineEscapeEvents < 65535) ++lineEscapeEvents;
     reportIrState(F("LINE_ESCAPE"));
     return;
   }
@@ -1076,7 +1086,8 @@ void followBall() {
 
   const int vx = calculateBallStrafe(position);
   const int sideError = abs(2500 - position);
-  const int vy = BALL_FORWARD_SPEED * (2500 - sideError) / 2500;
+  // Mega int is 16-bit: promote before multiplying (170 * 2500 = 425000).
+  const int vy = (int32_t)BALL_FORWARD_SPEED * (2500 - sideError) / 2500;
   lastFollowVx = vx;
 
   debugBallPosition = position;
@@ -1099,6 +1110,9 @@ int8_t motorTestIndex = -1;
 unsigned long motorTestStartedMs = 0;
 const unsigned long MOTOR_TEST_MS = 700;
 const int MOTOR_TEST_PWM = 100;
+const int FORWARD_TEST_PWM = 170;
+bool forwardTestActive = false;
+unsigned long forwardTestStartedMs = 0;
 char commandLine[12] = {0};
 uint8_t commandLength = 0;
 
@@ -1114,10 +1128,15 @@ void printMotorDirections() {
 void printCommands() {
   Serial.println(F("Commands: a=AUTO, s=STOP, c=gyro recalibrate, g=green recalibrate"));
   Serial.println(F("l=show TCS readings, p=show directions, d1..d4=flip and save FL/FR/BL/BR"));
-  Serial.println(F("t1f..t4f or t1r..t4r=test one motor for 700 ms"));
+  Serial.println(F("f=test all four motors forward for 700 ms; t1f..t4f or t1r..t4r=test one motor"));
 }
 
 void processSerialCommand(const char* command) {
+  // Any new command ends an in-progress forward test immediately.
+  if (forwardTestActive) {
+    forwardTestActive = false;
+    stopAll();
+  }
   if (strcmp(command, "a") == 0) {
     stopAll();
     motorTestIndex = -1;
@@ -1134,6 +1153,15 @@ void processSerialCommand(const char* command) {
     printMotorDirections();
   } else if (strcmp(command, "l") == 0) {
     printTcsReadings();
+  } else if (strcmp(command, "f") == 0) {
+    manualMode = true;
+    motorTestIndex = -1;
+    stopAll();
+    drive(FORWARD_TEST_PWM, 0, 0);
+    forwardTestStartedMs = millis();
+    forwardTestActive = true;
+    Serial.println(F("Pure forward test: vy=170 vx=0 yaw correction=0, auto-stop in 700 ms."));
+    printMotorDirections();
   } else if (strcmp(command, "g") == 0) {
     manualMode = true;
     motorTestIndex = -1;
@@ -1337,6 +1365,11 @@ void loop() {
   serviceTCS();
 
   if (manualMode) {
+    if (forwardTestActive && millis() - forwardTestStartedMs >= MOTOR_TEST_MS) {
+      stopAll();
+      forwardTestActive = false;
+      Serial.println(F("Forward test stopped; still MANUAL. Send a for AUTO."));
+    }
     if (motorTestIndex >= 0 && millis() - motorTestStartedMs >= MOTOR_TEST_MS) {
       stopAll();
       motorTestIndex = -1;
