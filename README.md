@@ -25,6 +25,6 @@ The HiTechnic IR Seeker V2 uses I²C address `0x08` in AC mode. ESP32 SDA is GPI
 
 The ESP32 sketch creates the `SoccerMagnumOpus` Wi-Fi access point. Use the credentials configured near the top of the sketch and open the access point IP shown on Serial Monitor at 115200 baud. The dashboard shows the HiTechnic IR ball direction on a 1–9 front arc, sensor readings, manual controls, individual motor tests, and saved motor directions.
 
-When the ball is lost, the robot searches with sideways sweeps and forward steps while keeping its heading. Line escape can override the search.
+The ESP32 sketch reads IR every 20 ms, confirms the ball with two valid readings, and moves forward less when the ball is far to one side. If the ball is briefly lost, it keeps only a reduced sideways command for 120 ms. It then reverses diagonally away from the ball's last side for at most 450 ms and searches sideways while keeping its heading. Five failed IR transactions stop the motors until I²C recovers. Line escape overrides ball following and search. Check the direction and motor sign on the actual robot before running at full speed.
 
 Earlier sketches and tests remain available in this repository's Git history.
