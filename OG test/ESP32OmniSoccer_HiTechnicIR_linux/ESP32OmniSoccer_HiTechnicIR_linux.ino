@@ -814,9 +814,6 @@ const int CENTER_DEADZONE_EXIT = 180;
 
 const int SEARCH_BACK_SPEED = 100;
 const int SEARCH_BACK_STEER = 60;
-const int SEARCH_SIDE_SPEED = 90;
-const unsigned long SEARCH_BACK_TIME = 450;
-const unsigned long SEARCH_SWEEP_TIME = 900;
 
 // ============================================================
 // SEARCH STATE
@@ -1274,24 +1271,12 @@ int calculateBallStrafe(
 // ============================================================
 
 void searchForBall() {
-  // Back away from the ball's last side once, then scan sideways. This
-  // bounds reverse travel toward our own goal and keeps the gyro heading.
-  const unsigned long elapsed = millis() - ballLostTime - BALL_LOST_GRACE_MS;
+  // Keep reversing diagonally until the IR sees the ball again. White-line
+  // escape takes priority in followBall(), and the gyro holds heading.
   const int awaySide = (lastPosition > 2500) ? 1 : -1;
-  int vy = 0;
-  int vx = 0;
-  if (elapsed < SEARCH_BACK_TIME) {
-    vy = -SEARCH_BACK_SPEED;
-    vx = awaySide * SEARCH_BACK_STEER;
-  } else {
-    const unsigned long sweep = (elapsed - SEARCH_BACK_TIME) / SEARCH_SWEEP_TIME;
-    vx = (sweep & 1U) ? -awaySide * SEARCH_SIDE_SPEED
-                      : awaySide * SEARCH_SIDE_SPEED;
-  }
-
-  debugVX = vx;
-  debugVY = vy;
-  driveWithGyro(vy, vx);
+  debugVX = awaySide * SEARCH_BACK_STEER;
+  debugVY = -SEARCH_BACK_SPEED;
+  driveWithGyro(debugVY, debugVX);
 }
 
 void reportBallState(const char *state, int position) {
@@ -1355,7 +1340,7 @@ void followBall() {
     }
 
     searchForBall();
-    reportBallState("SEARCH", position);
+    reportBallState("BACKOFF", position);
 
     return;
   }
@@ -2259,7 +2244,7 @@ void setup() {
   );
 
   Serial.println(
-    "Lost ball = short diagonal backoff, then sideways sweep"
+    "Lost ball = continuous diagonal reverse until IR sees ball"
   );
 
   Serial.println(
