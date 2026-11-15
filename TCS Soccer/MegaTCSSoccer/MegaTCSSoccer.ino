@@ -270,10 +270,14 @@ void serviceTCS() {
   const uint8_t sensor = tcsRoundRobinIndex;
   tcsRoundRobinIndex = (sensor + 1) % tcsCount;
   TcsReading &reading = tcsLive[sensor];
-  reading.available = tcsReadColor(sensor, reading.color);
-  if (reading.available) {
+  TcsColor color;
+  if (tcsReadColor(sensor, color)) {
+    reading.color = color;
+    reading.available = true;
     reading.white = tcsCalibrationComplete && !tcsMatchesGreen(sensor, reading.color);
     reading.lastUpdate = millis();
+  } else if (millis() - reading.lastUpdate > TCS_MAX_AGE_MS) {
+    reading.available = false;
   }
 }
 
@@ -445,6 +449,11 @@ bool handleWhiteLineEscape() {
 
 const uint8_t IR_ADDRESS = 0x08;
 const uint8_t IR_AC_DIRECTION_REGISTER = 0x49;
+uint8_t irLastTxStatus = 0xFF;
+uint8_t irLastReceived = 0;
+uint8_t irLastDirection = 0;
+uint16_t irLastStrength = 0;
+bool irLastTimeout = false;
 
 // ============================================================
 // SENSOR SMOOTHING
@@ -470,33 +479,40 @@ bool debugBallDetected = false;
 // ============================================================
 
 const int BALL_THRESHOLD = 1;  // Minimum derived HiTechnic AC strength.
+const unsigned long IR_READ_INTERVAL_MS = 20;
+const uint8_t BALL_CONFIRM_READS = 2;
+const unsigned long BALL_LOST_GRACE_MS = 120;
+const unsigned long BALL_FILTER_RESET_MS = 200;
+const uint8_t IR_FAULT_READS = 5;
 
 // ============================================================
 // BALL POSITION
 // ============================================================
 
 int lastPosition = 2500;
+unsigned long lastIRReadMs = 0;
+unsigned long lastBallSeenMs = 0;
+uint8_t validBallReads = 0;
+uint8_t irFailedReads = 0;
+bool sampledBallDetected = false;
+int lastFollowVx = 0;
 
 // ============================================================
 // BALL FOLLOW SPEEDS
 // ============================================================
 
-const int BALL_FORWARD_SPEED = 150;
-const int BALL_STRAFE_SPEED = 130;
-const int CENTER_DEADZONE = 250;
+const int BALL_FORWARD_SPEED = 170;
+const int BALL_STRAFE_SPEED = 170;
+const int BALL_STRAFE_MIN = 55;
+const int CENTER_DEADZONE_ENTER = 350;
+const int CENTER_DEADZONE_EXIT = 180;
 
 // ============================================================
 // SEARCH SETTINGS
 // ============================================================
 
-const int SEARCH_SIDE_SPEED = 125;
-const int SEARCH_FORWARD_SPEED = 110;
-
-// Side, forward, double-side, forward, side: one sideways sweep.
-const unsigned long SIDE_SEARCH_TIME = 650;
-const unsigned long FORWARD_SEARCH_TIME = 600;
-const unsigned long SEARCH_CYCLE_TIME =
-  4UL * SIDE_SEARCH_TIME + 2UL * FORWARD_SEARCH_TIME;
+const int SEARCH_BACK_SPEED = 100;
+const int SEARCH_BACK_STEER = 60;
 
 // ============================================================
 // SEARCH STATE
@@ -861,19 +877,34 @@ void driveWithGyro(
 bool readBall(
   int &position
 ) {
-  uint8_t data[6] = {0, 0, 0, 0, 0, 0};
-  bool readOK = false;
+  const unsigned long now = millis();
+  if (now - lastIRReadMs < IR_READ_INTERVAL_MS) {
+    position = lastPosition;
+    return sampledBallDetected;
+  }
+  lastIRReadMs = now;
 
-  // Use the same AC-mode transaction as the working HiTechnic IR test.
+  uint8_t data[6] = {0, 0, 0, 0, 0, 0};
+  Wire.clearWireTimeoutFlag();
   Wire.beginTransmission(IR_ADDRESS);
   Wire.write(IR_AC_DIRECTION_REGISTER);
-  if (Wire.endTransmission() == 0 &&
-      Wire.requestFrom(IR_ADDRESS, uint8_t(6)) == 6) {
+  irLastTxStatus = Wire.endTransmission();
+  irLastReceived = 0;
+  if (irLastTxStatus == 0) {
+    irLastReceived = Wire.requestFrom(IR_ADDRESS, uint8_t(6));
+  }
+  irLastTimeout = Wire.getWireTimeoutFlag();
+  if (irLastReceived == 6 && !irLastTimeout) {
     for (int i = 0; i < 6; i++) data[i] = Wire.read();
-    readOK = (data[0] <= 9);
+    irLastDirection = data[0];
   } else {
+    irLastDirection = 0;
     while (Wire.available()) Wire.read();
   }
+  const bool readOK = irLastTxStatus == 0 && irLastReceived == 6 &&
+                      !irLastTimeout && data[0] <= 9;
+  if (readOK) irFailedReads = 0;
+  else if (irFailedReads < IR_FAULT_READS) ++irFailedReads;
 
   // Channel 0 is direction; channels 1-5 are the AC detectors.
   for (int i = 0; i < 6; i++) {
@@ -890,24 +921,55 @@ bool readBall(
     else
       strength = (uint16_t(data[index - 1]) + data[index]) / 2;
   }
+  irLastStrength = strength;
 
-  if (direction == 0 || strength < BALL_THRESHOLD) {
+  if (!readOK || direction == 0 || strength < BALL_THRESHOLD) {
+    validBallReads = 0;
+    sampledBallDetected = false;
     debugBallDetected = false;
-    position = (lastPosition > 2500) ? 5000 : 0;
+    position = lastPosition;
     debugBallPosition = position;
     return false;
   }
 
-  // Preserve the existing 0..5000 ball-position and strafe logic.
-  // HiTechnic 1 is left and 9 is right; the old position scale is reversed.
-  position = (9 - direction) * 625;
-
-  // 50/50 smoothing. Both positions are within 0..5000.
-  position = (lastPosition + position) / 2;
+  // Direction 1 is left, 5 is front, 9 is right. Smooth at the fixed
+  // 20 ms sample rate, then reset quickly when the ball reappears elsewhere.
+  const int rawPosition = (9 - direction) * 625;
+  position = (now - lastBallSeenMs > BALL_FILTER_RESET_MS)
+               ? rawPosition
+               : (lastPosition * 2 + rawPosition) / 3;
   lastPosition = position;
-  debugBallDetected = true;
+  lastBallSeenMs = now;
+  if (validBallReads < BALL_CONFIRM_READS) ++validBallReads;
+  sampledBallDetected = validBallReads >= BALL_CONFIRM_READS;
+  debugBallDetected = sampledBallDetected;
   debugBallPosition = position;
-  return true;
+  return sampledBallDetected;
+}
+
+void reportIrState(const __FlashStringHelper *state) {
+  static unsigned long lastReportMs = 0;
+  if (millis() - lastReportMs < 200) return;
+  lastReportMs = millis();
+
+  Serial.print(F("IR state="));
+  Serial.print(state);
+  Serial.print(F(" dir="));
+  Serial.print(irLastDirection);
+  Serial.print(F(" strength="));
+  Serial.print(irLastStrength);
+  Serial.print(F(" tx="));
+  Serial.print(irLastTxStatus);
+  Serial.print(F(" rx="));
+  Serial.print(irLastReceived);
+  Serial.print(F("/6 timeout="));
+  Serial.print(irLastTimeout ? F("yes") : F("no"));
+  Serial.print(F(" pos="));
+  Serial.print(debugBallPosition);
+  Serial.print(F(" vx="));
+  Serial.print(debugVX);
+  Serial.print(F(" vy="));
+  Serial.println(debugVY);
 }
 
 // ============================================================
@@ -917,35 +979,18 @@ bool readBall(
 int calculateBallStrafe(
   int position
 ) {
+  static bool strafing = false;
+  const int error = 2500 - position;
+  const int magnitude = abs(error);
+  if (magnitude <= CENTER_DEADZONE_EXIT) strafing = false;
+  else if (magnitude >= CENTER_DEADZONE_ENTER) strafing = true;
+  if (!strafing) return 0;
 
-  int error =
-    2500 - position;
-
-  if (
-    abs(error) <
-    CENTER_DEADZONE
-  ) {
-
-    return 0;
-  }
-
-  int vx =
-    map(
-      error,
-      -2500,
-      2500,
-      -BALL_STRAFE_SPEED,
-      BALL_STRAFE_SPEED
-    );
-
-  vx =
-    constrain(
-      vx,
-      -BALL_STRAFE_SPEED,
-      BALL_STRAFE_SPEED
-    );
-
-  return vx;
+  const int speed = constrain(
+    map(magnitude, CENTER_DEADZONE_EXIT, 2500,
+        BALL_STRAFE_MIN, BALL_STRAFE_SPEED),
+    BALL_STRAFE_MIN, BALL_STRAFE_SPEED);
+  return error < 0 ? -speed : speed;
 }
 
 // ============================================================
@@ -953,34 +998,12 @@ int calculateBallStrafe(
 // ============================================================
 
 void searchForBall() {
-  // followBall() already checked the IR sensor this loop. Search keeps
-  // translating and checks for the ball again on the next loop.
-  unsigned long elapsed =
-    (millis() - ballLostTime) % SEARCH_CYCLE_TIME;
-
-  // The old position scale is reversed: >2500 means the ball was left.
-  int side = (lastPosition > 2500) ? -1 : 1;
-  int vy = 0;
-  int vx = 0;
-
-  if (elapsed < SIDE_SEARCH_TIME) {
-    // First pass toward the ball's last known side.
-    vx = side * SEARCH_SIDE_SPEED;
-  } else if (elapsed < SIDE_SEARCH_TIME + FORWARD_SEARCH_TIME) {
-    vy = SEARCH_FORWARD_SPEED;
-  } else if (elapsed < 3UL * SIDE_SEARCH_TIME + FORWARD_SEARCH_TIME) {
-    // Cross the full width in the other direction.
-    vx = -side * SEARCH_SIDE_SPEED;
-  } else if (elapsed < 3UL * SIDE_SEARCH_TIME + 2UL * FORWARD_SEARCH_TIME) {
-    vy = SEARCH_FORWARD_SPEED;
-  } else {
-    // Return sideways to the starting lane before the next sweep.
-    vx = side * SEARCH_SIDE_SPEED;
-  }
-
-  debugVX = vx;
-  debugVY = vy;
-  driveWithGyro(vy, vx);
+  // Keep reversing diagonally until IR sees the ball again. TCS line escape
+  // takes priority in followBall(), and the gyro holds heading.
+  const int awaySide = (lastPosition > 2500) ? 1 : -1;
+  debugVX = awaySide * SEARCH_BACK_STEER;
+  debugVY = -SEARCH_BACK_SPEED;
+  driveWithGyro(debugVY, debugVX);
 }
 
 // ============================================================
@@ -988,19 +1011,14 @@ void searchForBall() {
 // ============================================================
 
 void followBall() {
-
-  if (!tcsReadingsReady()) {
-    stopAll();
-    return;
-  }
+  const bool tcsReady = tcsReadingsReady();
+  if (!tcsReady) stopAll();
 
   // Boundary protection comes first.
   // GREEN is learned automatically; anything else is WHITE.
   // Escape uses translation only (w = 0).
 
-  if (handleWhiteLineEscape()) {
-    return;
-  }
+  const bool lineEscape = tcsReady && handleWhiteLineEscape();
 
   int position = 2500;
 
@@ -1009,6 +1027,24 @@ void followBall() {
 
   debugBallDetected = ballDetected;
   debugBallPosition = position;
+
+  if (!tcsReady) {
+    reportIrState(F("TCS_WAIT"));
+    return;
+  }
+
+  if (lineEscape) {
+    reportIrState(F("LINE_ESCAPE"));
+    return;
+  }
+
+  if (irFailedReads >= IR_FAULT_READS) {
+    stopAll();
+    debugVX = 0;
+    debugVY = 0;
+    reportIrState(F("IR_FAULT"));
+    return;
+  }
 
   if (!ballDetected) {
 
@@ -1021,7 +1057,16 @@ void followBall() {
         false;
     }
 
+    if (millis() - ballLostTime < BALL_LOST_GRACE_MS) {
+      debugVX = lastFollowVx / 2;
+      debugVY = 0;
+      driveWithGyro(debugVY, debugVX);
+      reportIrState(F("GRACE"));
+      return;
+    }
+
     searchForBall();
+    reportIrState(F("BACKOFF"));
 
     return;
   }
@@ -1029,13 +1074,10 @@ void followBall() {
   ballWasVisible =
     true;
 
-  int vx =
-    calculateBallStrafe(
-      position
-    );
-
-  int vy =
-    BALL_FORWARD_SPEED;
+  const int vx = calculateBallStrafe(position);
+  const int sideError = abs(2500 - position);
+  const int vy = BALL_FORWARD_SPEED * (2500 - sideError) / 2500;
+  lastFollowVx = vx;
 
   debugBallPosition = position;
   debugVX = vx;
@@ -1045,40 +1087,7 @@ void followBall() {
     vy,
     vx
   );
-
-  // DEBUG (Mega UART is slower than the ESP32 USB serial path.)
-  static unsigned long lastBallReportMs = 0;
-  if (millis() - lastBallReportMs < 200) return;
-  lastBallReportMs = millis();
-
-  Serial.print("BALL | ");
-
-  for (
-    int i = 0;
-    i < 6;
-    i++
-  ) {
-
-    Serial.print(i == 0 ? "Dir" : "S");
-    if (i != 0) Serial.print(i);
-    Serial.print(":");
-    Serial.print((int)smooth[i]);
-
-    if (i < 5)
-      Serial.print(" ");
-  }
-
-  Serial.print(" | POS=");
-  Serial.print(position);
-
-  Serial.print(" | VX=");
-  Serial.print(vx);
-
-  Serial.print(" | VY=");
-  Serial.print(vy);
-
-  Serial.print(" | YAW=");
-  Serial.println(currentYaw);
+  reportIrState(F("FOLLOW"));
 }
 
 // ============================================================
@@ -1308,7 +1317,7 @@ void setup() {
   );
 
   Serial.println(
-    "Search = sideways sweep with forward steps"
+    "Lost ball = continuous diagonal reverse until IR sees ball"
   );
 
   Serial.println(

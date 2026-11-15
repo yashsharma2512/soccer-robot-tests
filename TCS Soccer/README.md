@@ -36,6 +36,8 @@ The sensors integrate in parallel at **9.6 ms** integration time, plus sensor ov
 
 The initial gain is **1×**. If the readings clip at the top of the range, adjust `TCS_LIGHT_BRIGHTNESS` or your breakout’s illumination. If the readings are too dim, `TCS_GAIN = 0x01` selects **4×**. Recalibrate over green after changing the lighting, height or gain.
 
+Ball following matches the ESP32 Wi-Fi sketch: IR is sampled every 20 ms, two valid readings confirm the ball, and forward drive falls as the ball moves to either side. A 120 ms loss gets a reduced sideways command. After that the robot keeps reversing diagonally away from the ball's last seen side, without turning or sweeping, until IR sees the ball again. TCS line escape overrides this movement, missing TCS data stops the motors, and five failed IR transactions stop the motors until communication recovers. Steering alone cannot guarantee that the robot will miss its own goal; test the actual field geometry and line sensors.
+
 The green color tolerance is now **0.05** (previously 0.08). A reading at least **1.50×** as bright as its green calibration is also treated as a line. Check `l` over several green and white spots with the motors stopped: green should have `distance <= 0.05` and `C/green < 1.50`; white should exceed one of these limits. If ordinary green triggers `LINE`, tune these constants from your readings instead of increasing sensor gain blindly.
 
 Other Serial commands carry over from the Mega OG sketch. [Mega motor and gyro commands](../OG%20test%20Mega/README.md#optional-serial-commands)
